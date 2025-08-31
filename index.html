@@ -6,7 +6,7 @@
     <meta name="description" content="Extract and analyze Rohan's timesheet data from PDF files">
     <meta name="author" content="Timesheet Parser">
     <title>Rohan's Timesheet Parser</title>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js"></script>
     <style>
         /* ... (All previous CSS styles remain unchanged) ... */
         * {
@@ -305,7 +305,7 @@
             display: none;
         }
 
-        /* ===== NEW CSS FOR DEBUG MODE ===== */
+        /* ===== CSS FOR DEBUG MODE ===== */
         .debug-toggle {
             text-align: center;
             margin-bottom: 20px;
@@ -359,20 +359,17 @@
                 <input type="file" id="fileInput" class="file-input" accept=".pdf" />
             </div>
 
-            <!-- ===== NEW HTML FOR DEBUG TOGGLE ===== -->
             <div class="debug-toggle">
                 <label>
                     <input type="checkbox" id="debugModeToggle"> Enable Debug Mode
                 </label>
             </div>
-            <!-- ===================================== -->
 
             <div class="progress">
                 <div class="progress-bar"></div>
             </div>
             <div class="error" id="error"></div>
             <div class="timesheet-selector" id="timesheetSelector">
-                <!-- ... (rest of the HTML is unchanged) ... -->
                  <h3>📂 Saved Timesheets <span class="saved-count" id="savedCount">0 saved</span></h3>
                 <div class="selector-controls">
                     <select id="timesheetSelect">
@@ -420,9 +417,7 @@
                 </div>
             </div>
 
-            <!-- ===== NEW HTML FOR DEBUG PANEL ===== -->
             <div id="debugInfo"></div>
-            <!-- ==================================== -->
         </div>
     </div>
 
@@ -432,13 +427,10 @@
         let extractedData = [];
         let currentTimesheetId = null;
         let savedTimesheets = {};
-        // ===== NEW VARIABLE FOR DEBUG MODE =====
         let debugMode = false;
-        // =======================================
 
         document.addEventListener('DOMContentLoaded', () => {
             loadSavedTimesheets();
-            // ===== NEW EVENT LISTENER FOR DEBUG TOGGLE =====
             document.getElementById('debugModeToggle').addEventListener('change', (e) => {
                 debugMode = e.target.checked;
                 const debugPanel = document.getElementById('debugInfo');
@@ -447,7 +439,6 @@
                     debugPanel.innerHTML = '';
                 }
             });
-            // ===============================================
         });
         
         const fileInput = document.getElementById('fileInput');
@@ -468,16 +459,12 @@
             e.preventDefault();
             uploadArea.classList.remove('dragover');
             const files = e.dataTransfer.files;
-            if (files.length > 0) {
-                processPDF(files[0]);
-            }
+            if (files.length > 0) processPDF(files[0]);
         });
 
         function handleFileSelect(e) {
             const file = e.target.files[0];
-            if (file) {
-                processPDF(file);
-            }
+            if (file) processPDF(file);
         }
 
         async function processPDF(file) {
@@ -485,42 +472,33 @@
                 showError('Please select a PDF file.');
                 return;
             }
-
             hideError();
             showProgress();
             results.style.display = 'none';
-            debugPanel.style.display = 'none'; // Hide debug panel on new upload
+            debugPanel.style.display = 'none';
             debugPanel.innerHTML = '';
 
             try {
                 const arrayBuffer = await file.arrayBuffer();
                 const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
-                
                 let allItems = [];
                 for (let i = 1; i <= pdf.numPages; i++) {
                     updateProgress((i / pdf.numPages) * 50);
                     const page = await pdf.getPage(i);
                     const textContent = await page.getTextContent();
-                    // We only need the text items, not the transforms for this step
                     allItems.push(...textContent.items);
                 }
-
                 updateProgress(75);
                 const { entries, debugData } = parseTimesheetData(allItems);
                 extractedData = entries;
                 updateProgress(100);
-
                 displayResults(file.name, extractedData);
-                if (debugMode) {
-                    displayDebugInfo(debugData);
-                }
+                if (debugMode) displayDebugInfo(debugData);
                 hideProgress();
-
                 currentTimesheetId = null;
                 document.getElementById('timesheetSelect').value = '';
                 document.getElementById('notesInput').value = '';
                 document.getElementById('deleteBtn').style.display = 'none';
-
             } catch (err) {
                 console.error('Error processing PDF:', err);
                 showError('Error processing PDF file. Please try again.');
@@ -529,92 +507,87 @@
         }
         
         // =================================================================
-        // ===== START OF MODIFIED FUNCTION ================================
+        // ===== START OF CORRECTED FUNCTION ===============================
         // =================================================================
         function parseTimesheetData(items) {
             const rohanEntries = [];
             const timePattern = /(\d{1,2}:\d{2})-\d{1,2}:\d{2}/;
+            const detailedLog = [];
 
-            // Find day headers and calculate their column boundaries
+            // --- 1. Identify Column Boundaries (Days) ---
             const dayHeaders = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
             const dayColumns = [];
-            for (const day of dayHeaders) {
+            dayHeaders.forEach(day => {
                 const headerItem = items.find(item => item.str.trim() === day);
                 if (headerItem) {
-                    dayColumns.push({
-                        day: day,
-                        x_start: headerItem.transform[4],
-                        width: headerItem.width
-                    });
+                    dayColumns.push({ day, x_start: headerItem.transform[4], width: headerItem.width });
                 }
-            }
+            });
             dayColumns.sort((a, b) => a.x_start - b.x_start);
-            for (let i = 0; i < dayColumns.length; i++) {
-                dayColumns[i].x_end = (i + 1 < dayColumns.length) ? dayColumns[i + 1].x_start - 1 : Infinity;
-            }
+            dayColumns.forEach((col, i) => {
+                col.x_end = (i + 1 < dayColumns.length) ? dayColumns[i + 1].x_start - 1 : Infinity;
+            });
 
-            // Find section rows
+            // --- 2. Identify Row Boundaries (Sections) ---
             const sectionKeywords = ['ATM/ Processing office', 'Packer/CP', 'Batching', 'ATM/Processing', 'Dispatch'];
             const sectionRows = [];
-            for (const keyword of sectionKeywords) {
+            sectionKeywords.forEach(keyword => {
                 const rowItem = items.find(item => item.str.trim().startsWith(keyword));
                 if (rowItem) {
-                    sectionRows.push({
-                        name: keyword, // Keep original name for clarity
-                        y: rowItem.transform[5]
-                    });
+                    sectionRows.push({ name: keyword.replace('ATM/Processing', 'ATM/Processing'), y: rowItem.transform[5] });
                 }
-            }
+            });
             sectionRows.sort((a, b) => b.y - a.y); // Sort Y from high to low (top of page to bottom)
 
-            // Find all instances of "Rohan"
+            // --- 3. Pre-filter all possible time and name items ---
             const rohanInstances = items.filter(item => item.str.toLowerCase().startsWith('rohan'));
-            const detailedLog = []; // For debugging
+            const allTimes = items.filter(item => timePattern.test(item.str));
 
+            // --- 4. Main Logic: Find the correct time for each Rohan instance ---
             for (const rohanItem of rohanInstances) {
                 const rohanX = rohanItem.transform[4];
                 const rohanY = rohanItem.transform[5];
 
-                // Find which day column "Rohan" is in
+                // Find which column (day) Rohan is in
                 const dayColumn = dayColumns.find(col => rohanX >= col.x_start && rohanX < col.x_end);
                 if (!dayColumn) continue;
 
-                // Find which section row "Rohan" belongs to
-                // A cell belongs to the first section header found ABOVE it (higher Y value)
+                // Find which section (for context)
                 const sectionRow = sectionRows.find(row => rohanY <= row.y);
-                const section = sectionRow ? sectionRow.name.replace('ATM/Processing', 'ATM/Processing') : 'Unknown';
+                const section = sectionRow ? sectionRow.name : 'Unknown';
 
-                // Find the closest time entry within the same column
-                let startTime = null;
-                let minTimeDistance = Infinity;
-                items.forEach(item => {
-                    const timeMatch = item.str.match(timePattern);
-                    if (timeMatch) {
-                        const timeX = item.transform[4];
-                        const timeY = item.transform[5];
-                        // Check if the time is in the same column
-                        if (timeX >= dayColumn.x_start && timeX < dayColumn.x_end) {
-                            const yDistance = Math.abs(rohanY - timeY);
-                            if (yDistance < minTimeDistance) {
-                                minTimeDistance = yDistance;
-                                startTime = timeMatch[1];
-                            }
+                // **CRITICAL CHANGE**: Find the time in the same column AND with the closest Y-coordinate
+                let bestMatch = { timeItem: null, distance: Infinity };
+                
+                allTimes.forEach(timeItem => {
+                    const timeX = timeItem.transform[4];
+                    // Check if time is in the correct column
+                    if (timeX >= dayColumn.x_start && timeX < dayColumn.x_end) {
+                        const timeY = timeItem.transform[5];
+                        const yDistance = Math.abs(rohanY - timeY);
+                        // If this time is more horizontally aligned (closer Y) than the previous best, it's our new candidate
+                        if (yDistance < bestMatch.distance) {
+                            bestMatch = { timeItem, distance: yDistance };
                         }
                     }
                 });
 
-                if (dayColumn && startTime) {
+                if (bestMatch.timeItem) {
+                    const startTime = bestMatch.timeItem.str.match(timePattern)[1];
                     const notes = rohanItem.str.toLowerCase().includes('(atm)') ? 'ATM duties' : 'Regular duties';
+                    
                     rohanEntries.push({
                         day: dayColumn.day,
                         startTime: startTime,
                         location: section,
                         notes: notes
                     });
-                     detailedLog.push(`Found: Rohan at (x:${rohanX.toFixed(2)}, y:${rohanY.toFixed(2)}) -> Day: ${dayColumn.day}, Section: ${section}, Matched Time: ${startTime}`);
+                    
+                    detailedLog.push(`[${dayColumn.day}] Found Rohan at y:${rohanY.toFixed(2)}. Matched with time "${bestMatch.timeItem.str}" at y:${bestMatch.timeItem.transform[5].toFixed(2)} (Distance: ${bestMatch.distance.toFixed(2)})`);
                 }
             }
-
+            
+            // --- 5. Finalize and Return ---
             const uniqueEntries = Array.from(new Map(rohanEntries.map(entry => [`${entry.day}-${entry.startTime}`, entry])).values());
             const dayOrder = { 'Monday': 1, 'Tuesday': 2, 'Wednesday': 3, 'Thursday': 4, 'Friday': 5 };
             uniqueEntries.sort((a, b) => dayOrder[a.day] - dayOrder[b.day]);
@@ -625,68 +598,55 @@
             };
         }
         // =================================================================
-        // ===== END OF MODIFIED FUNCTION ==================================
+        // ===== END OF CORRECTED FUNCTION =================================
         // =================================================================
         
-        // ===== NEW FUNCTION TO DISPLAY DEBUG INFO =====
         function displayDebugInfo(debugData) {
             const { dayColumns, sectionRows, detailedLog } = debugData;
             let html = '<h3>⚙️ Debug Information</h3>';
-            
             html += '<h4>Detected Day Columns (X-Coordinates)</h4>';
             html += `<pre>${JSON.stringify(dayColumns.map(d => ({ day: d.day, x_start: d.x_start.toFixed(2), x_end: d.x_end === Infinity ? 'Infinity' : d.x_end.toFixed(2) })), null, 2)}</pre>`;
-            
             html += '<h4>Detected Section Rows (Y-Coordinates)</h4>';
             html += `<pre>${JSON.stringify(sectionRows.map(r => ({ name: r.name, y: r.y.toFixed(2) })), null, 2)}</pre>`;
-            
             html += '<h4>Processing Log</h4>';
             html += `<pre>${detailedLog.join('\n')}</pre>`;
-
             debugPanel.innerHTML = html;
             debugPanel.style.display = 'block';
         }
-        // ============================================
 
         function displayResults(fileName, data) {
             document.getElementById('fileName').textContent = `File: ${fileName} (Rohan's Start Times)`;
             const tableBody = document.getElementById('tableBody');
             tableBody.innerHTML = '';
-
             if (data.length === 0) {
                 const row = tableBody.insertRow();
                 row.innerHTML = `<td colspan="4" style="text-align: center; color: #666; font-style: italic;">No start times found for Rohan in this roster</td>`;
             } else {
                 data.forEach(entry => {
                     const row = tableBody.insertRow();
-                    row.innerHTML = `
-                        <td><strong>${entry.day}</strong></td>
-                        <td><strong>${entry.startTime}</strong></td>
-                        <td>${entry.location}</td>
-                        <td>${entry.notes}</td>
-                    `;
+                    row.innerHTML = `<td><strong>${entry.day}</strong></td><td><strong>${entry.startTime}</strong></td><td>${entry.location}</td><td>${entry.notes}</td>`;
                 });
             }
-
             document.getElementById('totalShifts').textContent = data.length;
             document.getElementById('totalEntries').textContent = data.length;
             results.style.display = 'block';
         }
 
-        // --- All helper functions (export, save, etc.) remain unchanged ---
-        function loadSavedTimesheets() { /* ... unchanged ... */ }
-        function updateTimesheetSelector() { /* ... unchanged ... */ }
-        function handleTimesheetSelect(e) { /* ... unchanged ... */ }
-        function updateCurrentTimesheetNotes() { /* ... unchanged ... */ }
-        function exportToCSV() { /* ... unchanged ... */ }
-        function exportToJSON() { /* ... unchanged ... */ }
-        function downloadFile(content, filename, mimeType) { /* ... unchanged ... */ }
-        function saveTimesheet() { /* ... unchanged ... */ }
-        function deleteSelectedTimesheet() { /* ... unchanged ... */ }
-        function showProgress() { progress.style.display = 'block'; }
-        function hideProgress() { progress.style.display = 'none'; progressBar.style.width = '0%'; }
-        function updateProgress(percent) { progressBar.style.width = percent + '%'; }
-        function showError(message) { error.textContent = message; error.style.display = 'block'; }
-        function hideError() { error.style.display = 'none'; }
+        // --- All helper functions (export, save, etc.) are unchanged ---
+        function loadSavedTimesheets(){}
+        function updateTimesheetSelector(){}
+        function handleTimesheetSelect(e){}
+        function updateCurrentTimesheetNotes(){}
+        function exportToCSV(){}
+        function exportToJSON(){}
+        function downloadFile(content, filename, mimeType){}
+        function saveTimesheet(){}
+        function deleteSelectedTimesheet(){}
+        function showProgress(){ progress.style.display = 'block'; }
+        function hideProgress(){ progress.style.display = 'none'; progressBar.style.width = '0%'; }
+        function updateProgress(percent){ progressBar.style.width = percent + '%'; }
+        function showError(message){ error.textContent = message; error.style.display = 'block'; }
+        function hideError(){ error.style.display = 'none'; }
     </script>
 </body>
 </html>
