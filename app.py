@@ -9,11 +9,12 @@ import io
 from dataclasses import dataclass, asdict
 from flask import Flask, render_template, request, jsonify
 import pdfplumber
+from collections import defaultdict # CHANGED: Import defaultdict directly
 
 app = Flask(__name__)
 
 # Configuration
-TARGET_NAME = "Rohan"  # Change this to your target employee name
+TARGET_NAME = "Rohan"
 WEEKDAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"]
 
 # Regular expressions
@@ -26,6 +27,7 @@ class DayInfo:
     start: str = None
     note: str = None
     date: str = None
+    area: str = None # CHANGED: Added area field
 
 @dataclass
 class WeekRecord:
@@ -82,103 +84,95 @@ def parse_timesheet_pdf(pdf_file, target_name=TARGET_NAME):
     """Parse a timesheet PDF and extract relevant data"""
     try:
         with pdfplumber.open(pdf_file) as pdf:
-            if not pdf.pages:
-                return None
-                
+            if not pdf.pages: return None
             page = pdf.pages[0]
             text = page.extract_text() or ""
+            if target_name.lower() not in text.lower(): return None
             
-            # Check if target name is in the PDF
-            if target_name.lower() not in text.lower():
-                return None
-            
-            # Extract week ending date
             week_ending = None
             m = WEEK_ENDING_RE.search(text)
-            if m:
-                week_ending = m.group(1)
+            if m: week_ending = m.group(1)
             
-            # Extract words and determine column structure
             words = page.extract_words(use_text_flow=True, keep_blank_chars=False)
             col_bounds = _col_bounds_from_weekday_headers(words)
+            if not col_bounds: return None
             
-            if not col_bounds:
-                return None
-            
-            # Group words by row
-            from collections import defaultdict
             rows = defaultdict(list)
             for w in words:
-                if w["text"] in WEEKDAYS:
-                    continue
+                if w["text"] in WEEKDAYS: continue
                 y_key = round(w["top"])
                 rows[y_key].append(w)
             
-            # Create grid structure
+            # CHANGED: Grid creation now also captures area text to the left
             row_keys = sorted(rows.keys())
             grid = []
+            areas = [] # Keep a parallel list of area text for each row
             for y in row_keys:
-                cells = [""]*5
-                for w in rows[y]:
+                cells = [""] * 5
+                area_text = ""
+                # Sort words in the row by their horizontal position
+                sorted_words = sorted(rows[y], key=lambda w: w['x0'])
+                for w in sorted_words:
                     x_center = (w["x0"] + w["x1"]) / 2
                     ci = _col_index(col_bounds, x_center)
                     if ci is not None:
                         cells[ci] = (cells[ci] + " " + w["text"]).strip() if cells[ci] else w["text"]
+                    elif x_center < col_bounds[0]: # If word is left of the first column
+                        area_text = (area_text + " " + w["text"]).strip()
                 grid.append(cells)
+                areas.append(area_text)
             
-            # Parse dates from header
             header_dates = _parse_dates_row_from_grid(grid)
             
-            # Extract time and employee data
+            # CHANGED: Logic to track the current area and assign it
             last_time_starts = None
+            current_area = ""
             captures = {d: [] for d in WEEKDAYS}
             notes = {d: [] for d in WEEKDAYS}
-            
-            for cells in grid:
+            areas_by_day = {d: [] for d in WEEKDAYS}
+
+            for row_idx, cells in enumerate(grid):
+                if areas[row_idx]: # If this row has area text, it becomes the current area
+                    current_area = areas[row_idx]
+                
                 if _is_time_row(cells):
                     last_time_starts = _get_time_starts(cells)
                     continue
                     
                 if last_time_starts:
-                    for idx, day in enumerate(WEEKDAYS):
-                        nm = (cells[idx] or "").strip()
-                        if nm and target_name.lower() in nm.lower():
-                            if last_time_starts[idx]:
-                                captures[day].append(last_time_starts[idx])
-                            if "ATM" in nm.upper():
-                                notes[day].append("ATM")
+                    for day_idx, day_name in enumerate(WEEKDAYS):
+                        cell_text = (cells[day_idx] or "").strip()
+                        if cell_text and target_name.lower() in cell_text.lower():
+                            if last_time_starts[day_idx]:
+                                captures[day_name].append(last_time_starts[day_idx])
+                                areas_by_day[day_name].append(current_area) # Capture the area for this time
+                            if "ATM" in cell_text.upper():
+                                notes[day_name].append("ATM")
             
-            # Process captured data
             def to_minutes(tstr):
                 h, m = map(int, tstr.split(":"))
                 return h*60 + m
             
             days = {}
             for i, day in enumerate(WEEKDAYS):
-                starts = captures[day]
-                chosen = None
-                if starts:
-                    chosen = sorted(starts, key=to_minutes)[-1]  # Latest start time
+                # We take the latest start time if multiple are found for the target
+                if captures[day]:
+                    indexed_starts = list(zip(captures[day], areas_by_day[day]))
+                    latest_entry = sorted(indexed_starts, key=lambda t: to_minutes(t[0]))[-1]
+                    chosen_start, chosen_area = latest_entry
+                else:
+                    chosen_start, chosen_area = None, None
                 
-                note = None
-                if notes[day]:
-                    unique_notes = []
-                    for n in notes[day]:
-                        if n not in unique_notes:
-                            unique_notes.append(n)
-                    note = ", ".join(unique_notes)
+                note = ", ".join(sorted(list(set(notes[day])))) if notes[day] else None
                 
                 days[day] = asdict(DayInfo(
-                    start=chosen, 
+                    start=chosen_start, 
                     note=note, 
-                    date=header_dates[i] if i < len(header_dates) else None
+                    date=header_dates[i] if i < len(header_dates) else None,
+                    area=chosen_area # CHANGED: Save the captured area
                 ))
             
-            return WeekRecord(
-                week_ending=week_ending,
-                dates=header_dates,
-                days=days
-            )
+            return WeekRecord(week_ending=week_ending, dates=header_dates, days=days)
             
     except Exception as e:
         print(f"Error parsing PDF: {e}")
@@ -190,36 +184,23 @@ def index():
 
 @app.route('/parse', methods=['POST'])
 def parse_pdf():
-    if 'pdf' not in request.files:
-        return jsonify({'error': 'No PDF file provided'}), 400
-    
+    if 'pdf' not in request.files: return jsonify({'error': 'No PDF file provided'}), 400
     file = request.files['pdf']
-    if file.filename == '':
-        return jsonify({'error': 'No file selected'}), 400
-    
-    if not file.filename.lower().endswith('.pdf'):
-        return jsonify({'error': 'File must be a PDF'}), 400
+    if file.filename == '': return jsonify({'error': 'No file selected'}), 400
+    if not file.filename.lower().endswith('.pdf'): return jsonify({'error': 'File must be a PDF'}), 400
     
     try:
-        # Parse the uploaded PDF
         pdf_stream = io.BytesIO(file.read())
         result = parse_timesheet_pdf(pdf_stream)
+        if result is None: return jsonify({'error': f'Could not parse timesheet or {TARGET_NAME} not found'}), 400
         
-        if result is None:
-            return jsonify({'error': f'Could not parse timesheet or {TARGET_NAME} not found'}), 400
-        
-        # Convert to JSON-serializable format
-        response_data = {
-            'week_ending': result.week_ending,
-            'dates': result.dates,
-            'days': result.days,
-            'success': True
-        }
-        
+        response_data = asdict(result)
+        response_data['success'] = True
         return jsonify(response_data)
         
     except Exception as e:
         return jsonify({'error': f'Error processing PDF: {str(e)}'}), 500
 
 if __name__ == '__main__':
-    app.run(debug=True, host='0.0.0.0', port=int(os.environ.get('PORT', 5000)))
+    port = int(os.environ.get('PORT', 5000))
+    app.run(host='0.0.0.0', port=port)
