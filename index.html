@@ -2,117 +2,78 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <!-- FIX: Corrected the viewport meta tag -->
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="description" content="Extract and analyze Rohan's timesheet data from PDF files">
+    <meta name="description" content="A simple web tool to parse timesheet PDFs for Rohan's schedule.">
     <meta name="author" content="Timesheet Parser">
     <title>Rohan's Timesheet Parser</title>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js"></script>
+    <!-- The PDF.js library is loaded from a trusted CDN -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
     <style>
-        /* ... (All previous CSS styles remain unchanged) ... */
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
+        :root {
+            --primary-color: #4facfe;
+            --secondary-color: #00f2fe;
+            --background-gradient: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            --card-background: #ffffff;
+            --text-color: #333;
+            --light-text-color: #666;
+            --border-radius: 20px;
+            --box-shadow: 0 20px 40px rgba(0,0,0,0.1);
         }
-
+        * { margin: 0; padding: 0; box-sizing: border-box; }
         body {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            background: var(--background-gradient);
             min-height: 100vh;
             padding: 20px;
+            display: flex;
+            justify-content: center;
+            align-items: flex-start;
         }
-        
         .container {
+            width: 100%;
             max-width: 800px;
             margin: 0 auto;
-            background: white;
-            border-radius: 20px;
-            box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+            background: var(--card-background);
+            border-radius: var(--border-radius);
+            box-shadow: var(--box-shadow);
             overflow: hidden;
         }
-
         .header {
-            background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+            background: linear-gradient(135deg, var(--primary-color) 0%, var(--secondary-color) 100%);
             color: white;
             padding: 30px;
             text-align: center;
         }
-
-        .header h1 {
-            font-size: 2.5rem;
-            margin-bottom: 10px;
-            font-weight: 700;
-        }
-
-        .header p {
-            opacity: 0.9;
-            font-size: 1.1rem;
-        }
-
-        .content {
-            padding: 40px;
-            position: relative; 
-        }
-        
+        .header h1 { font-size: 2.2rem; font-weight: 700; }
+        .content { padding: 30px; position: relative; }
         #initializer {
             position: absolute;
-            top: 0;
-            left: 0;
-            right: 0;
-            bottom: 0;
-            background: rgba(255, 255, 255, 0.8);
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(255, 255, 255, 0.9);
             z-index: 10;
             display: flex;
             justify-content: center;
             align-items: center;
             text-align: center;
             font-size: 1.2rem;
-            color: #333;
+            color: var(--text-color);
             backdrop-filter: blur(5px);
         }
-
         .upload-area {
             border: 3px dashed #ddd;
             border-radius: 15px;
-            padding: 60px 20px;
+            padding: 40px 20px;
             text-align: center;
             transition: all 0.3s ease;
             cursor: pointer;
-            margin-bottom: 30px;
-            background: linear-gradient(145deg, #f8f9fa, #e9ecef);
-        }
-
-        .upload-area:hover {
-            border-color: #4facfe;
-            background: linear-gradient(145deg, #e3f2fd, #bbdefb);
-            transform: translateY(-2px);
-        }
-
-        .upload-area.dragover {
-            border-color: #00f2fe;
-            background: linear-gradient(145deg, #e0f2f1, #b2dfdb);
-            transform: scale(1.02);
-        }
-
-        .upload-icon {
-            font-size: 4rem;
             margin-bottom: 20px;
-            color: #4facfe;
+            background: #f8f9fa;
         }
-
-        .upload-text {
-            font-size: 1.2rem;
-            color: #666;
-            margin-bottom: 15px;
-        }
-
-        .file-input {
-            display: none;
-        }
-
+        .upload-area:hover { border-color: var(--primary-color); }
+        .upload-icon { font-size: 3rem; margin-bottom: 15px; color: var(--primary-color); }
+        .upload-text { font-size: 1.1rem; color: var(--light-text-color); margin-bottom: 15px; }
         .btn {
-            background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+            background: linear-gradient(135deg, var(--primary-color) 0%, var(--secondary-color) 100%);
             color: white;
             border: none;
             padding: 15px 30px;
@@ -122,42 +83,17 @@
             transition: all 0.3s ease;
             box-shadow: 0 4px 15px rgba(79, 172, 254, 0.4);
         }
-
-        .btn:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 6px 20px rgba(79, 172, 254, 0.6);
-        }
-
-        .progress {
-            width: 100%;
-            height: 8px;
-            background: #f0f0f0;
-            border-radius: 4px;
-            overflow: hidden;
+        .btn:hover { transform: translateY(-2px); box-shadow: 0 6px 20px rgba(79, 172, 254, 0.6); }
+        .file-input { display: none; }
+        .error {
+            background: #ffdde1;
+            color: #d93025;
+            padding: 15px;
+            border-radius: 10px;
             margin: 20px 0;
             display: none;
         }
-
-        .progress-bar {
-            height: 100%;
-            background: linear-gradient(90deg, #4facfe, #00f2fe);
-            transition: width 0.3s ease;
-            width: 0%;
-        }
-
-        .results {
-            display: none;
-            margin-top: 30px;
-        }
-
-        .results-header {
-            background: linear-gradient(135deg, #11998e, #38ef7d);
-            color: white;
-            padding: 20px;
-            border-radius: 10px;
-            margin-bottom: 20px;
-        }
-
+        .results { display: none; margin-top: 20px; }
         .data-table {
             width: 100%;
             border-collapse: collapse;
@@ -165,385 +101,75 @@
             overflow: hidden;
             box-shadow: 0 10px 25px rgba(0,0,0,0.1);
         }
-
+        .data-table th, .data-table td { padding: 12px 15px; text-align: left; }
         .data-table th {
             background: linear-gradient(135deg, #667eea, #764ba2);
             color: white;
-            padding: 15px;
-            text-align: left;
             font-weight: 600;
         }
-
-        .data-table td {
-            padding: 12px 15px;
-            border-bottom: 1px solid #f0f0f0;
-        }
-
-        .data-table tr:nth-child(even) {
-            background: #f8f9fa;
-        }
-
-        .data-table tr:hover {
-            background: #e3f2fd;
-        }
-
-        .summary {
-            background: linear-gradient(135deg, #ffecd2, #fcb69f);
-            padding: 20px;
-            border-radius: 10px;
-            margin-top: 20px;
-        }
-
-        .summary h3 {
-            color: #333;
-            margin-bottom: 15px;
-        }
-
-        .summary-item {
-            display: flex;
-            justify-content: space-between;
-            margin-bottom: 10px;
-            padding: 8px 0;
-            border-bottom: 1px solid rgba(0,0,0,0.1);
-        }
-
-        .summary-item:last-child {
-            border-bottom: none;
-            font-weight: 600;
-            font-size: 1.1rem;
-        }
-
-        .export-buttons {
-            margin-top: 20px;
-            text-align: center;
-        }
-
-        .export-buttons button {
-            margin: 0 10px;
-            background: linear-gradient(135deg, #a8edea, #fed6e3);
-            color: #333;
-        }
-
-        .timesheet-selector {
-            background: linear-gradient(135deg, #ffecd2, #fcb69f);
-            padding: 20px;
-            border-radius: 10px;
-            margin-bottom: 30px;
-            display: none;
-        }
-
-        .timesheet-selector h3 {
-            color: #333;
-            margin-bottom: 15px;
-            display: flex;
-            align-items: center;
-            gap: 10px;
-        }
-
-        .selector-controls {
-            display: flex;
-            gap: 15px;
-            align-items: center;
-            flex-wrap: wrap;
-            margin-bottom: 15px;
-        }
-
-        .selector-controls select {
-            flex: 1;
-            min-width: 200px;
-            padding: 12px 15px;
-            border: 2px solid #ddd;
-            border-radius: 8px;
-            font-size: 1rem;
-            background: white;
-            transition: border-color 0.3s ease;
-        }
-
-        .selector-controls select:focus {
-            outline: none;
-            border-color: #4facfe;
-        }
-
-        .notes-section {
-            margin-top: 15px;
-        }
-
-        .notes-input {
-            width: 100%;
-            padding: 12px 15px;
-            border: 2px solid #ddd;
-            border-radius: 8px;
-            font-size: 1rem;
-            resize: vertical;
-            min-height: 60px;
-            transition: border-color 0.3s ease;
-        }
-
-        .notes-input:focus {
-            outline: none;
-            border-color: #4facfe;
-        }
-
-        .notes-label {
-            display: block;
-            margin-bottom: 8px;
-            font-weight: 600;
-            color: #333;
-        }
-
-        .delete-btn {
-            background: linear-gradient(135deg, #ff9a9e, #fecfef);
-            color: #721c24;
-            border: none;
-            padding: 8px 15px;
-            border-radius: 20px;
-            font-size: 0.9rem;
-            cursor: pointer;
-            transition: all 0.3s ease;
-        }
-
-        .delete-btn:hover {
-            transform: translateY(-1px);
-            box-shadow: 0 4px 15px rgba(255, 154, 158, 0.4);
-        }
-
-        .saved-count {
-            background: rgba(255, 255, 255, 0.2);
-            padding: 5px 12px;
-            border-radius: 15px;
-            font-size: 0.9rem;
-            margin-left: 10px;
-        }
-
-        .error {
-            background: linear-gradient(135deg, #ff9a9e, #fecfef);
-            color: #721c24;
-            padding: 15px;
-            border-radius: 10px;
-            margin: 20px 0;
-            display: none;
-        }
-
-        .debug-toggle {
-            text-align: center;
-            margin-bottom: 20px;
-        }
-        #debugInfo {
-            display: none;
-            margin-top: 20px;
-            padding: 15px;
-            background-color: #2c3e50;
-            color: #ecf0f1;
-            border-radius: 10px;
-            font-family: 'Courier New', Courier, monospace;
-            font-size: 0.9rem;
-        }
-        #debugInfo h3 {
-            color: #1abc9c;
-            border-bottom: 1px solid #34495e;
-            padding-bottom: 5px;
-            margin-bottom: 10px;
-        }
-        #debugInfo pre {
-            white-space: pre-wrap;
-            word-wrap: break-word;
-            background-color: #34495e;
-            padding: 10px;
-            border-radius: 5px;
-        }
-
-        @media (max-width: 600px) {
-            .content { padding: 20px; }
-            .header h1 { font-size: 2rem; }
-            .upload-area { padding: 40px 15px; }
-            .data-table { font-size: 0.9rem; }
-            .data-table th, .data-table td { padding: 8px 10px; }
-        }
+        .data-table tr:nth-child(even) { background: #f8f9fa; }
     </style>
 </head>
 <body>
     <div class="container">
         <div class="header">
-            <h1>📊 Rohan's Timesheet Parser</h1>
-            <p>Extract and analyze Rohan's timesheet data from PDF files</p>
+            <h1>Rohan's Timesheet Parser</h1>
         </div>
-
         <div class="content">
-            <div id="initializer">
-                Initializing PDF Engine...
-            </div>
+            <div id="initializer">Initializing PDF Engine...</div>
 
-            <div class="upload-area" onclick="document.getElementById('fileInput').click()">
+            <div class="upload-area" id="uploadArea">
                 <div class="upload-icon">📄</div>
-                <div class="upload-text">Click to select PDF file or drag and drop</div>
+                <div class="upload-text">Tap to select PDF file or drag & drop</div>
                 <button class="btn">Choose File</button>
                 <input type="file" id="fileInput" class="file-input" accept=".pdf" />
             </div>
 
-            <div class="debug-toggle">
-                <label>
-                    <input type="checkbox" id="debugModeToggle"> Enable Debug Mode
-                </label>
-            </div>
-
-            <div class="progress">
-                <div class="progress-bar"></div>
-            </div>
             <div class="error" id="error"></div>
-            <div class="timesheet-selector" id="timesheetSelector">
-                 <h3>📂 Saved Timesheets <span class="saved-count" id="savedCount">0 saved</span></h3>
-                <div class="selector-controls">
-                    <select id="timesheetSelect">
-                        <option value="">Select a timesheet...</option>
-                    </select>
-                    <button class="delete-btn" onclick="deleteSelectedTimesheet()" id="deleteBtn" style="display: none;">🗑️ Delete</button>
-                </div>
-                <div class="notes-section">
-                    <label class="notes-label" for="notesInput">📝 Area/Location Notes:</label>
-                    <textarea id="notesInput" class="notes-input" placeholder="e.g., ATM maintenance, Office work, Field service..."></textarea>
-                </div>
-            </div>
-
             <div class="results" id="results">
-                <div class="results-header">
-                    <h2>📋 Extracted Data</h2>
-                    <p id="fileName"></p>
-                </div>
-                <table class="data-table" id="dataTable">
+                <table class="data-table">
                     <thead>
                         <tr>
                             <th>Day</th>
                             <th>Start Time</th>
                             <th>Area/Location</th>
-                            <th>Notes</th>
                         </tr>
                     </thead>
                     <tbody id="tableBody"></tbody>
                 </table>
-                <div class="summary">
-                     <h3>📈 Summary</h3>
-                    <div class="summary-item">
-                        <span>Total Shifts:</span>
-                        <span id="totalShifts">0</span>
-                    </div>
-                    <div class="summary-item">
-                        <span>Total Entries Found:</span>
-                        <span id="totalEntries">0</span>
-                    </div>
-                </div>
-                <div class="export-buttons">
-                    <button class="btn" onclick="exportToCSV()">💾 Export CSV</button>
-                    <button class="btn" onclick="exportToJSON()">📄 Export JSON</button>
-                    <button class="btn" onclick="saveTimesheet()">💾 Save Timesheet</button>
-                </div>
             </div>
-
-            <div id="debugInfo"></div>
         </div>
     </div>
 
     <script>
-        // Global variables
-        let extractedData = [];
-        let currentTimesheetId = null;
-        let savedTimesheets = {};
-        let debugMode = false;
-        
+        // --- Global DOM References ---
         const fileInput = document.getElementById('fileInput');
-        const uploadArea = document.querySelector('.upload-area');
-        const progress = document.querySelector('.progress');
-        const progressBar = document.querySelector('.progress-bar');
-        const results = document.getElementById('results');
-        const error = document.getElementById('error');
-        const debugPanel = document.getElementById('debugInfo');
+        const uploadArea = document.getElementById('uploadArea');
+        const resultsDiv = document.getElementById('results');
+        const tableBody = document.getElementById('tableBody');
+        const errorDiv = document.getElementById('error');
         const initializer = document.getElementById('initializer');
-
-        function initializeApp() {
-            pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
-            loadSavedTimesheets();
-            
-            document.getElementById('debugModeToggle').addEventListener('change', (e) => {
-                debugMode = e.target.checked;
-                if (!debugMode) {
-                    debugPanel.style.display = 'none';
-                    debugPanel.innerHTML = '';
-                }
-            });
-            
-            fileInput.addEventListener('change', handleFileSelect);
-            document.getElementById('timesheetSelect').addEventListener('change', handleTimesheetSelect);
-            document.getElementById('notesInput').addEventListener('input', updateCurrentTimesheetNotes);
-            uploadArea.addEventListener('dragover', (e) => { e.preventDefault(); uploadArea.classList.add('dragover'); });
-            uploadArea.addEventListener('dragleave', () => { uploadArea.classList.remove('dragover'); });
-            uploadArea.addEventListener('drop', (e) => {
-                e.preventDefault();
-                uploadArea.classList.remove('dragover');
-                const files = e.dataTransfer.files;
-                if (files.length > 0) processPDF(files[0]);
-            });
-            initializer.style.display = 'none';
-        }
-
-        async function processPDF(file) {
-            if (file.type !== 'application/pdf') {
-                showError('Please select a PDF file.');
-                return;
-            }
-            if (typeof pdfjsLib === 'undefined' || !pdfjsLib.getDocument) {
-                showError('PDF library is not loaded. Please wait a moment and try again, or refresh the page.');
-                return;
-            }
-            hideError();
-            showProgress();
-            results.style.display = 'none';
-            debugPanel.style.display = 'none';
-            debugPanel.innerHTML = '';
-            try {
-                const arrayBuffer = await file.arrayBuffer();
-                const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
-                let allItems = [];
-                for (let i = 1; i <= pdf.numPages; i++) {
-                    updateProgress((i / pdf.numPages) * 50);
-                    const page = await pdf.getPage(i);
-                    const textContent = await page.getTextContent();
-                    allItems.push(...textContent.items);
-                }
-                updateProgress(75);
-                const { entries, debugData } = parseTimesheetData(allItems);
-                extractedData = entries;
-                updateProgress(100);
-                displayResults(file.name, extractedData);
-                if (debugMode) displayDebugInfo(debugData);
-                hideProgress();
-                currentTimesheetId = null;
-                document.getElementById('timesheetSelect').value = '';
-                document.getElementById('notesInput').value = '';
-                document.getElementById('deleteBtn').style.display = 'none';
-            } catch (err) {
-                console.error('Error processing PDF:', err);
-                showError('Error processing PDF file. Please try again.');
-                hideProgress();
-            }
-        }
         
-        // =================================================================
-        // ===== START OF FINAL, CORRECTED PARSING FUNCTION ================
-        // =================================================================
+        /**
+         * The core parsing function, translated from the successful Python logic.
+         * It reconstructs the PDF's grid structure to accurately find data.
+         * @param {Array} items - The array of text items from pdf.js.
+         * @returns {Object} An object containing the extracted entries.
+         */
         function parseTimesheetData(items) {
             const timePattern = /(\d{1,2}:\d{2})-\d{1,2}:\d{2}/;
-            const detailedLog = [];
+            const targetName = "rohan";
             const rohanEntries = [];
-            
+
             // 1. Reconstruct the grid from PDF text items
+            // Group items by their Y-coordinate to form rows, then X for columns
             const yCoords = [...new Set(items.map(p => Math.round(p.transform[5])))].sort((a, b) => b - a);
             const xCoords = [...new Set(items.map(p => Math.round(p.transform[4])))].sort((a, b) => a - b);
             const grid = yCoords.map(() => Array(xCoords.length).fill(''));
             items.forEach(item => {
                 const yIndex = yCoords.indexOf(Math.round(item.transform[5]));
                 const xIndex = xCoords.indexOf(Math.round(item.transform[4]));
-                if (yIndex !== -1 && xIndex !== -1) {
-                    grid[yIndex][xIndex] = item.str;
-                }
+                if (yIndex !== -1 && xIndex !== -1) grid[yIndex][xIndex] = item.str;
             });
 
             // 2. Find the column index for each day of the week
@@ -551,13 +177,11 @@
             const dayColumnMap = {};
             grid.forEach(row => {
                 row.forEach((cell, colIndex) => {
-                    if (dayHeaders.includes(cell.trim())) {
-                        dayColumnMap[cell.trim()] = colIndex;
-                    }
+                    if (dayHeaders.includes(cell.trim())) dayColumnMap[cell.trim()] = colIndex;
                 });
             });
 
-            // 3. Find the column index for sections
+            // 3. Find the column index that contains the section/area names
             const sectionKeywords = ['ATM/ Processing office', 'Packer/CP', 'Batching', 'ATM/Processing', 'Dispatch'];
             let sectionColIndex = -1;
             for (let r = 0; r < grid.length; r++) {
@@ -573,14 +197,14 @@
             // 4. Iterate through the grid to find Rohan's shifts
             grid.forEach((row, rowIndex) => {
                 row.forEach((cell, colIndex) => {
-                    if (cell.toLowerCase().startsWith('rohan')) {
+                    if (cell.toLowerCase().startsWith(targetName)) {
                         const day = Object.keys(dayColumnMap).find(d => dayColumnMap[d] === colIndex);
                         if (!day) return;
 
                         let time = '';
                         let section = '';
 
-                        // Look UP in the same column for the time
+                        // Look UP in the SAME column for the time
                         for (let r = rowIndex; r >= 0; r--) {
                             const potentialTimeCell = grid[r][colIndex];
                             if (timePattern.test(potentialTimeCell)) {
@@ -589,208 +213,117 @@
                             }
                         }
 
-                        // Look UP in the section column for the section
+                        // Look UP in the SECTION column for the section/area
                         if (sectionColIndex !== -1) {
                             for (let r = rowIndex; r >= 0; r--) {
                                 const potentialSectionCell = grid[r][sectionColIndex];
-                                if (potentialSectionCell.trim().length > 1) {
+                                // A valid section name has some length and isn't just a number/time
+                                if (potentialSectionCell && potentialSectionCell.trim().length > 1 && isNaN(potentialSectionCell.charAt(0))) {
                                     section = potentialSectionCell.trim();
                                     break;
                                 }
                             }
                         }
-
-                        if (time) {
-                            rohanEntries.push({
-                                day,
-                                startTime: time,
-                                location: section,
-                                notes: cell.toLowerCase().includes('(atm)') ? 'ATM duties' : 'Regular duties'
-                            });
-                            detailedLog.push(`[${day}] Rohan at [${rowIndex},${colIndex}] -> Time: ${time}, Section: ${section}`);
-                        }
+                        
+                        if (time) rohanEntries.push({ day, startTime: time, location: section });
                     }
                 });
             });
 
-            // 5. Final processing
+            // 5. Final processing: remove duplicates and sort by day
             const uniqueEntries = Array.from(new Map(rohanEntries.map(entry => [entry.day, entry])).values());
             const dayOrder = { 'Monday': 1, 'Tuesday': 2, 'Wednesday': 3, 'Thursday': 4, 'Friday': 5 };
             uniqueEntries.sort((a, b) => dayOrder[a.day] - dayOrder[b.day]);
 
-            return { entries: uniqueEntries, debugData: { dayColumnMap, detailedLog } };
+            return { entries: uniqueEntries };
         }
-        // =================================================================
-        // ===== END OF FINAL, CORRECTED PARSING FUNCTION ==================
-        // =================================================================
-        
-        // --- All functions below this line are helper functions and do not need to be changed ---
-        
-        function handleFileSelect(e) { /* ... */ }
-        function displayDebugInfo(debugData) { /* ... */ }
-        function displayResults(fileName, data) { /* ... */ }
-        function loadSavedTimesheets() { /* ... */ }
-        function updateTimesheetSelector() { /* ... */ }
-        function handleTimesheetSelect(e) { /* ... */ }
-        function updateCurrentTimesheetNotes() { /* ... */ }
-        function exportToCSV() { /* ... */ }
-        function exportToJSON() { /* ... */ }
-        function downloadFile(content, filename, mimeType) { /* ... */ }
-        function saveTimesheet() { /* ... */ }
-        function deleteSelectedTimesheet() { /* ... */ }
-        function showProgress() { /* ... */ }
-        function hideProgress() { /* ... */ }
-        function updateProgress(percent) { /* ... */ }
-        function showError(message) { /* ... */ }
-        function hideError() { /* ... */ }
 
-        // Copying full function bodies to avoid truncation issues
-        handleFileSelect = function(e) {
-            const file = e.target.files[0];
-            if (file) processPDF(file);
-        }
-        displayDebugInfo = function(debugData) {
-            const { dayColumnMap, detailedLog } = debugData;
-            let html = '<h3>⚙️ Debug Information</h3>';
-            html += '<h4>Detected Day Columns (by Column Index)</h4>';
-            html += `<pre>${JSON.stringify(dayColumnMap, null, 2)}</pre>`;
-            html += '<h4>Processing Log</h4>';
-            html += `<pre>${detailedLog.join('\n')}</pre>`;
-            debugPanel.innerHTML = html;
-            debugPanel.style.display = 'block';
-        }
-        displayResults = function(fileName, data) {
-            document.getElementById('fileName').textContent = `File: ${fileName} (Rohan's Start Times)`;
-            const tableBody = document.getElementById('tableBody');
-            tableBody.innerHTML = '';
-            if (data.length === 0) {
-                const row = tableBody.insertRow();
-                row.innerHTML = `<td colspan="4" style="text-align: center; color: #666; font-style: italic;">No start times found for Rohan in this roster</td>`;
-            } else {
-                data.forEach(entry => {
-                    const row = tableBody.insertRow();
-                    row.innerHTML = `<td><strong>${entry.day}</strong></td><td><strong>${entry.startTime}</strong></td><td>${entry.location}</td><td>${entry.notes}</td>`;
-                });
-            }
-            document.getElementById('totalShifts').textContent = data.length;
-            document.getElementById('totalEntries').textContent = data.length;
-            results.style.display = 'block';
-        }
-        loadSavedTimesheets = function() {
-            const saved = localStorage.getItem('savedTimesheets');
-            if (saved) {
-                savedTimesheets = JSON.parse(saved);
-                updateTimesheetSelector();
-            }
-        }
-        updateTimesheetSelector = function() {
-            const selector = document.getElementById('timesheetSelect');
-            const savedCount = document.getElementById('savedCount');
-            const timesheetSelectorDiv = document.getElementById('timesheetSelector');
-            selector.innerHTML = '<option value="">Select a timesheet...</option>';
-            const count = Object.keys(savedTimesheets).length;
-            savedCount.textContent = `${count} saved`;
-            if (count > 0) {
-                timesheetSelectorDiv.style.display = 'block';
-                Object.entries(savedTimesheets).forEach(([id, timesheet]) => {
-                    const option = document.createElement('option');
-                    option.value = id;
-                    option.textContent = `${timesheet.fileName} - ${timesheet.uploadDate}`;
-                    selector.appendChild(option);
-                });
-            } else {
-                timesheetSelectorDiv.style.display = 'none';
-            }
-        }
-        handleTimesheetSelect = function(e) {
-            const selectedId = e.target.value;
-            const deleteBtn = document.getElementById('deleteBtn');
-            if (selectedId && savedTimesheets[selectedId]) {
-                currentTimesheetId = selectedId;
-                const timesheet = savedTimesheets[selectedId];
-                extractedData = timesheet.data;
-                displayResults(timesheet.fileName, extractedData);
-                document.getElementById('notesInput').value = timesheet.notes || '';
-                deleteBtn.style.display = 'inline-block';
-            } else {
-                currentTimesheetId = null;
-                results.style.display = 'none';
-                document.getElementById('notesInput').value = '';
-                deleteBtn.style.display = 'none';
-            }
-        }
-        updateCurrentTimesheetNotes = function() {
-            if (currentTimesheetId && savedTimesheets[currentTimesheetId]) {
-                savedTimesheets[currentTimesheetId].notes = document.getElementById('notesInput').value;
-                localStorage.setItem('savedTimesheets', JSON.stringify(savedTimesheets));
-            }
-        }
-        exportToCSV = function() {
-            if (!extractedData || extractedData.length === 0) return;
-            const headers = ['Day', 'Start Time', 'Area/Location', 'Notes'];
-            const csv = [
-                headers.join(','),
-                ...extractedData.map(row => [row.day, row.startTime, `"${row.location}"`, `"${row.notes}"`].join(','))
-            ].join('\n');
-            downloadFile(csv, 'rohan_timesheet_data.csv', 'text/csv');
-        }
-        exportToJSON = function() {
-            if (!extractedData || extractedData.length === 0) return;
-            const json = JSON.stringify(extractedData, null, 2);
-            downloadFile(json, 'rohan_timesheet_data.json', 'application/json');
-        }
-        downloadFile = function(content, filename, mimeType) {
-            const blob = new Blob([content], { type: mimeType });
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = filename;
-            document.body.appendChild(a);
-            a.click();
-            document.body.removeChild(a);
-            URL.revokeObjectURL(url);
-        }
-        saveTimesheet = function() {
-            if (!extractedData || extractedData.length === 0) {
-                showError('No timesheet data to save.');
+        /**
+         * Processes the uploaded PDF file.
+         * @param {File} file - The PDF file from the input.
+         */
+        async function processPDF(file) {
+            if (!file || file.type !== 'application/pdf') {
+                showError('Please select a valid PDF file.');
                 return;
             }
-            const fileName = document.getElementById('fileName').textContent.replace('File: ', '') || 'timesheet.pdf';
-            const notes = document.getElementById('notesInput').value;
-            const uploadDate = new Date().toLocaleDateString();
-            const id = Date.now().toString();
-            const timesheet = { id, fileName, uploadDate, data: [...extractedData], notes };
-            savedTimesheets[id] = timesheet;
-            localStorage.setItem('savedTimesheets', JSON.stringify(savedTimesheets));
-            currentTimesheetId = id;
-            updateTimesheetSelector();
-            document.getElementById('timesheetSelect').value = id;
-            document.getElementById('deleteBtn').style.display = 'inline-block';
-            const headerElement = document.querySelector('.results-header h2');
-            const originalText = headerElement.textContent;
-            headerElement.textContent = '✅ Timesheet Saved Successfully!';
-            setTimeout(() => { headerElement.textContent = originalText; }, 2000);
-        }
-        deleteSelectedTimesheet = function() {
-            if (!currentTimesheetId || !savedTimesheets[currentTimesheetId]) return;
-            if (confirm('Are you sure you want to delete this timesheet?')) {
-                delete savedTimesheets[currentTimesheetId];
-                localStorage.setItem('savedTimesheets', JSON.stringify(savedTimesheets));
-                currentTimesheetId = null;
-                extractedData = [];
-                document.getElementById('timesheetSelect').value = '';
-                document.getElementById('notesInput').value = '';
-                document.getElementById('deleteBtn').style.display = 'none';
-                results.style.display = 'none';
-                updateTimesheetSelector();
+            hideError();
+            resultsDiv.style.display = 'none';
+            initializer.style.display = 'flex';
+            initializer.textContent = 'Processing PDF...';
+            
+            try {
+                const arrayBuffer = await file.arrayBuffer();
+                const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+                const page = await pdf.getPage(1);
+                const textContent = await page.getTextContent();
+                
+                const { entries } = parseTimesheetData(textContent.items);
+                
+                displayResults(entries);
+
+            } catch (err) {
+                console.error('Error processing PDF:', err);
+                showError('Could not process this PDF. It may be an image or corrupt.');
+            } finally {
+                initializer.style.display = 'none';
+                fileInput.value = ''; // Reset input to allow re-uploading the same file
             }
         }
-        showProgress = function(){ progress.style.display = 'block'; }
-        hideProgress = function(){ progress.style.display = 'none'; progressBar.style.width = '0%'; }
-        updateProgress = function(percent){ progressBar.style.width = percent + '%'; }
-        showError = function(message){ error.textContent = message; error.style.display = 'block'; }
-        hideError = function(){ error.style.display = 'none'; }
         
+        /**
+         * Renders the extracted data into the HTML table.
+         * @param {Array} entries - The array of parsed shift data.
+         */
+        function displayResults(entries) {
+            tableBody.innerHTML = ''; // Clear previous results
+            if (entries.length === 0) {
+                showError("No start times found for Rohan in this roster.");
+                return;
+            }
+            
+            entries.forEach(entry => {
+                const row = tableBody.insertRow();
+                row.innerHTML = `
+                    <td><strong>${entry.day}</strong></td>
+                    <td>${entry.startTime}</td>
+                    <td>${entry.location}</td>
+                `;
+            });
+            resultsDiv.style.display = 'block';
+        }
+
+        // --- UI Helper Functions ---
+        function showError(message) { errorDiv.textContent = message; errorDiv.style.display = 'block'; }
+        function hideError() { errorDiv.style.display = 'none'; }
+        function handleFileSelect(event) { const file = event.target.files[0]; processPDF(file); }
+
+        /**
+         * This function initializes the application after ensuring the PDF library is loaded.
+         */
+        function initializeApp() {
+            // Attach all event listeners now that the page is ready
+            uploadArea.addEventListener('click', () => fileInput.click());
+            fileInput.addEventListener('change', handleFileSelect);
+            
+            // Add drag and drop listeners
+            uploadArea.addEventListener('dragover', (e) => { e.preventDefault(); e.stopPropagation(); uploadArea.style.borderColor = 'var(--primary-color)'; });
+            uploadArea.addEventListener('dragleave', (e) => { e.preventDefault(); e.stopPropagation(); uploadArea.style.borderColor = '#ddd'; });
+            uploadArea.addEventListener('drop', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                uploadArea.style.borderColor = '#ddd';
+                const file = e.dataTransfer.files[0];
+                processPDF(file);
+            });
+            
+            // Hide the initializer overlay and show the main UI
+            initializer.style.display = 'none';
+        }
+
+        // --- Application Start ---
+        // We poll to check if the external pdf.js library is loaded before initializing the app.
+        // This is the most robust way to handle external script loading.
         const initCheckInterval = setInterval(() => {
             if (typeof pdfjsLib !== 'undefined' && pdfjsLib.getDocument) {
                 clearInterval(initCheckInterval);
@@ -798,12 +331,14 @@
             }
         }, 100);
 
+        // A fail-safe in case the library fails to load from the CDN
         setTimeout(() => {
             if (typeof pdfjsLib === 'undefined') {
                 clearInterval(initCheckInterval);
-                initializer.textContent = 'Error: Could not load PDF library. Please check your internet connection and refresh the page.';
+                initializer.textContent = 'Error: Could not load PDF library. Please check your internet connection and refresh.';
             }
-        }, 10000);
+        }, 10000); // 10-second timeout
+
     </script>
 </body>
 </html>
