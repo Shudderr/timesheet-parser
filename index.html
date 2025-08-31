@@ -3,10 +3,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="description" content="Extract and analyze Rohan's timesheet data from PDF files">
-    <meta name="author" content="Timesheet Parser">
-    <title>Rohan's Timesheet Parser</title>
+    <title>Advanced Rohan Timesheet Parser</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/tesseract.js/4.1.1/tesseract.min.js"></script>
     <style>
         * {
             margin: 0;
@@ -22,7 +21,7 @@
         }
 
         .container {
-            max-width: 800px;
+            max-width: 1000px;
             margin: 0 auto;
             background: white;
             border-radius: 20px;
@@ -41,11 +40,6 @@
             font-size: 2.5rem;
             margin-bottom: 10px;
             font-weight: 700;
-        }
-
-        .header p {
-            opacity: 0.9;
-            font-size: 1.1rem;
         }
 
         .content {
@@ -75,37 +69,59 @@
             transform: scale(1.02);
         }
 
-        .upload-icon {
-            font-size: 4rem;
-            margin-bottom: 20px;
-            color: #4facfe;
-        }
-
-        .upload-text {
-            font-size: 1.2rem;
-            color: #666;
-            margin-bottom: 15px;
-        }
-
-        .file-input {
+        .processing-status {
+            background: linear-gradient(135deg, #ffecd2, #fcb69f);
+            border-radius: 15px;
+            padding: 20px;
+            margin: 20px 0;
             display: none;
         }
 
-        .btn {
-            background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
-            color: white;
-            border: none;
-            padding: 15px 30px;
-            border-radius: 50px;
-            font-size: 1rem;
-            cursor: pointer;
-            transition: all 0.3s ease;
-            box-shadow: 0 4px 15px rgba(79, 172, 254, 0.4);
+        .status-item {
+            display: flex;
+            align-items: center;
+            margin-bottom: 10px;
+            padding: 10px;
+            background: rgba(255,255,255,0.7);
+            border-radius: 8px;
         }
 
-        .btn:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 6px 20px rgba(79, 172, 254, 0.6);
+        .status-icon {
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            margin-right: 15px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 12px;
+        }
+
+        .status-pending {
+            background: #ffd93d;
+            color: #333;
+        }
+
+        .status-processing {
+            background: #4facfe;
+            color: white;
+            animation: pulse 2s infinite;
+        }
+
+        .status-complete {
+            background: #10ac84;
+            color: white;
+        }
+
+        .status-error {
+            background: #ee5a52;
+            color: white;
+        }
+
+        @keyframes pulse {
+            0% { transform: scale(1); }
+            50% { transform: scale(1.1); }
+            100% { transform: scale(1); }
         }
 
         .progress {
@@ -123,6 +139,47 @@
             background: linear-gradient(90deg, #4facfe, #00f2fe);
             transition: width 0.3s ease;
             width: 0%;
+        }
+
+        .pdf-preview {
+            display: none;
+            margin: 20px 0;
+            text-align: center;
+        }
+
+        .pdf-canvas {
+            max-width: 100%;
+            border: 2px solid #ddd;
+            border-radius: 10px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+        }
+
+        .method-selector {
+            background: linear-gradient(135deg, #e3f2fd, #bbdefb);
+            border-radius: 15px;
+            padding: 20px;
+            margin: 20px 0;
+        }
+
+        .method-option {
+            display: flex;
+            align-items: center;
+            margin-bottom: 15px;
+            padding: 15px;
+            background: white;
+            border-radius: 10px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .method-option:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+        }
+
+        .method-option input[type="radio"] {
+            margin-right: 15px;
+            transform: scale(1.3);
         }
 
         .results {
@@ -167,132 +224,35 @@
             background: #e3f2fd;
         }
 
-        .summary {
-            background: linear-gradient(135deg, #ffecd2, #fcb69f);
-            padding: 20px;
-            border-radius: 10px;
-            margin-top: 20px;
-        }
-
-        .summary h3 {
-            color: #333;
-            margin-bottom: 15px;
-        }
-
-        .summary-item {
-            display: flex;
-            justify-content: space-between;
-            margin-bottom: 10px;
-            padding: 8px 0;
-            border-bottom: 1px solid rgba(0,0,0,0.1);
-        }
-
-        .summary-item:last-child {
-            border-bottom: none;
-            font-weight: 600;
-            font-size: 1.1rem;
-        }
-
-        .export-buttons {
-            margin-top: 20px;
-            text-align: center;
-        }
-
-        .export-buttons button {
-            margin: 0 10px;
-            background: linear-gradient(135deg, #a8edea, #fed6e3);
-            color: #333;
-        }
-
-        .timesheet-selector {
-            background: linear-gradient(135deg, #ffecd2, #fcb69f);
-            padding: 20px;
-            border-radius: 10px;
-            margin-bottom: 30px;
-            display: none;
-        }
-
-        .timesheet-selector h3 {
-            color: #333;
-            margin-bottom: 15px;
-            display: flex;
-            align-items: center;
-            gap: 10px;
-        }
-
-        .selector-controls {
-            display: flex;
-            gap: 15px;
-            align-items: center;
-            flex-wrap: wrap;
-            margin-bottom: 15px;
-        }
-
-        .selector-controls select {
-            flex: 1;
-            min-width: 200px;
-            padding: 12px 15px;
-            border: 2px solid #ddd;
-            border-radius: 8px;
-            font-size: 1rem;
-            background: white;
-            transition: border-color 0.3s ease;
-        }
-
-        .selector-controls select:focus {
-            outline: none;
-            border-color: #4facfe;
-        }
-
-        .notes-section {
-            margin-top: 15px;
-        }
-
-        .notes-input {
-            width: 100%;
-            padding: 12px 15px;
-            border: 2px solid #ddd;
-            border-radius: 8px;
-            font-size: 1rem;
-            resize: vertical;
-            min-height: 60px;
-            transition: border-color 0.3s ease;
-        }
-
-        .notes-input:focus {
-            outline: none;
-            border-color: #4facfe;
-        }
-
-        .notes-label {
-            display: block;
-            margin-bottom: 8px;
-            font-weight: 600;
-            color: #333;
-        }
-
-        .delete-btn {
-            background: linear-gradient(135deg, #ff9a9e, #fecfef);
-            color: #721c24;
+        .btn {
+            background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+            color: white;
             border: none;
-            padding: 8px 15px;
-            border-radius: 20px;
-            font-size: 0.9rem;
+            padding: 15px 30px;
+            border-radius: 50px;
+            font-size: 1rem;
             cursor: pointer;
             transition: all 0.3s ease;
+            box-shadow: 0 4px 15px rgba(79, 172, 254, 0.4);
+            margin: 10px;
         }
 
-        .delete-btn:hover {
-            transform: translateY(-1px);
-            box-shadow: 0 4px 15px rgba(255, 154, 158, 0.4);
+        .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(79, 172, 254, 0.6);
         }
 
-        .saved-count {
-            background: rgba(255, 255, 255, 0.2);
-            padding: 5px 12px;
-            border-radius: 15px;
-            font-size: 0.9rem;
-            margin-left: 10px;
+        .debug-panel {
+            background: #2d3748;
+            color: #e2e8f0;
+            border-radius: 10px;
+            padding: 20px;
+            margin: 20px 0;
+            font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+            font-size: 12px;
+            max-height: 300px;
+            overflow-y: auto;
+            display: none;
         }
 
         .error {
@@ -303,69 +263,74 @@
             margin: 20px 0;
             display: none;
         }
-
-        @media (max-width: 600px) {
-            .content {
-                padding: 20px;
-            }
-            
-            .header h1 {
-                font-size: 2rem;
-            }
-            
-            .upload-area {
-                padding: 40px 15px;
-            }
-            
-            .data-table {
-                font-size: 0.9rem;
-            }
-            
-            .data-table th,
-            .data-table td {
-                padding: 8px 10px;
-            }
-        }
     </style>
 </head>
 <body>
     <div class="container">
         <div class="header">
-            <h1>📊 Rohan's Timesheet Parser</h1>
-            <p>Extract and analyze Rohan's timesheet data from PDF files</p>
+            <h1>🔍 Advanced Rohan Parser</h1>
+            <p>OCR + Multiple parsing methods for maximum accuracy</p>
         </div>
 
         <div class="content">
             <div class="upload-area" onclick="document.getElementById('fileInput').click()">
-                <div class="upload-icon">📄</div>
-                <div class="upload-text">Click to select PDF file or drag and drop</div>
+                <div style="font-size: 4rem; margin-bottom: 20px; color: #4facfe;">📄</div>
+                <div style="font-size: 1.2rem; color: #666; margin-bottom: 15px;">Upload PDF Roster</div>
                 <button class="btn">Choose File</button>
-                <input type="file" id="fileInput" class="file-input" accept=".pdf" />
+                <input type="file" id="fileInput" style="display: none;" accept=".pdf" />
+            </div>
+
+            <div class="method-selector">
+                <h3 style="margin-bottom: 15px; color: #333;">🔧 Parsing Method</h3>
+                <div class="method-option" onclick="selectMethod('hybrid')">
+                    <input type="radio" name="method" value="hybrid" checked>
+                    <div>
+                        <strong>Hybrid Approach</strong> (Recommended)<br>
+                        <small>Combines text extraction + OCR for best results</small>
+                    </div>
+                </div>
+                <div class="method-option" onclick="selectMethod('ocr')">
+                    <input type="radio" name="method" value="ocr">
+                    <div>
+                        <strong>OCR Only</strong><br>
+                        <small>Converts PDF to image then reads text visually</small>
+                    </div>
+                </div>
+                <div class="method-option" onclick="selectMethod('text')">
+                    <input type="radio" name="method" value="text">
+                    <div>
+                        <strong>Text Extraction Only</strong><br>
+                        <small>Extracts embedded text from PDF</small>
+                    </div>
+                </div>
+                <div class="method-option" onclick="selectMethod('manual')">
+                    <input type="radio" name="method" value="manual">
+                    <div>
+                        <strong>Manual Visual Guide</strong><br>
+                        <small>Shows PDF + guides you to identify Rohan's times</small>
+                    </div>
+                </div>
+            </div>
+
+            <div class="processing-status" id="processingStatus">
+                <h3 style="margin-bottom: 15px;">Processing Status:</h3>
+                <div id="statusList"></div>
             </div>
 
             <div class="progress">
                 <div class="progress-bar"></div>
             </div>
 
-            <div class="error" id="error"></div>
-
-            <div class="timesheet-selector" id="timesheetSelector">
-                <h3>📂 Saved Timesheets <span class="saved-count" id="savedCount">0 saved</span></h3>
-                <div class="selector-controls">
-                    <select id="timesheetSelect">
-                        <option value="">Select a timesheet...</option>
-                    </select>
-                    <button class="delete-btn" onclick="deleteSelectedTimesheet()" id="deleteBtn" style="display: none;">🗑️ Delete</button>
-                </div>
-                <div class="notes-section">
-                    <label class="notes-label" for="notesInput">📝 Area/Location Notes:</label>
-                    <textarea id="notesInput" class="notes-input" placeholder="e.g., ATM maintenance, Office work, Field service..."></textarea>
-                </div>
+            <div class="pdf-preview" id="pdfPreview">
+                <h3 style="margin-bottom: 15px;">PDF Preview:</h3>
+                <canvas id="pdfCanvas" class="pdf-canvas"></canvas>
             </div>
+
+            <div class="error" id="error"></div>
 
             <div class="results" id="results">
                 <div class="results-header">
-                    <h2>📋 Extracted Data</h2>
+                    <h2>📋 Rohan's Start Times</h2>
                     <p id="fileName"></p>
                 </div>
 
@@ -375,361 +340,335 @@
                             <th>Entry #</th>
                             <th>Start Time</th>
                             <th>Area/Location</th>
-                            <th>Notes</th>
+                            <th>Confidence</th>
+                            <th>Method</th>
                         </tr>
                     </thead>
                     <tbody id="tableBody">
                     </tbody>
                 </table>
 
-                <div class="summary">
-                    <h3>📈 Summary</h3>
-                    <div class="summary-item">
-                        <span>Total Entries:</span>
-                        <span id="totalDays">0</span>
-                    </div>
-                    <div class="summary-item">
-                        <span>Start Times Found:</span>
-                        <span id="regularHours">0</span>
-                    </div>
-                    <div class="summary-item">
-                        <span>Rohan's Shifts:</span>
-                        <span id="totalHours">0</span>
-                    </div>
+                <div style="text-align: center; margin-top: 20px;">
+                    <button class="btn" onclick="exportCSV()">💾 Export CSV</button>
+                    <button class="btn" onclick="exportJSON()">📄 Export JSON</button>
+                    <button class="btn" onclick="tryDifferentMethod()">🔄 Try Different Method</button>
                 </div>
+            </div>
 
-                <div class="export-buttons">
-                    <button class="btn" onclick="exportToCSV()">💾 Export CSV</button>
-                    <button class="btn" onclick="exportToJSON()">📄 Export JSON</button>
-                    <button class="btn" onclick="saveTimesheet()">💾 Save Timesheet</button>
+            <div class="debug-panel" id="debugPanel">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                    <strong>Debug Output:</strong>
+                    <button onclick="toggleDebug()" style="background: #4a5568; color: white; border: none; padding: 5px 10px; border-radius: 5px;">Hide</button>
                 </div>
+                <div id="debugContent"></div>
+            </div>
+
+            <div style="text-align: center; margin-top: 20px;">
+                <button class="btn" onclick="toggleDebug()" style="background: #4a5568;">🐛 Show Debug Info</button>
             </div>
         </div>
     </div>
 
     <script>
-        // PDF.js setup
+        // Setup
         pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
 
+        let currentMethod = 'hybrid';
+        let currentPDF = null;
         let extractedData = [];
-        let currentTimesheetId = null;
-        let savedTimesheets = {};
 
-        // Load saved timesheets from localStorage on page load
-        document.addEventListener('DOMContentLoaded', loadSavedTimesheets);
+        document.getElementById('fileInput').addEventListener('change', handleFileSelect);
 
-        // File input handling
-        const fileInput = document.getElementById('fileInput');
-        const uploadArea = document.querySelector('.upload-area');
-        const progress = document.querySelector('.progress');
-        const progressBar = document.querySelector('.progress-bar');
-        const results = document.getElementById('results');
-        const error = document.getElementById('error');
+        function selectMethod(method) {
+            currentMethod = method;
+            document.querySelectorAll('input[name="method"]').forEach(radio => {
+                radio.checked = radio.value === method;
+            });
+        }
 
-        fileInput.addEventListener('change', handleFileSelect);
-
-        // Timesheet selector handling
-        document.getElementById('timesheetSelect').addEventListener('change', handleTimesheetSelect);
-        document.getElementById('notesInput').addEventListener('input', updateCurrentTimesheetNotes);
-
-        // Drag and drop
-        uploadArea.addEventListener('dragover', (e) => {
-            e.preventDefault();
-            uploadArea.classList.add('dragover');
-        });
-
-        uploadArea.addEventListener('dragleave', () => {
-            uploadArea.classList.remove('dragover');
-        });
-
-        uploadArea.addEventListener('drop', (e) => {
-            e.preventDefault();
-            uploadArea.classList.remove('dragover');
-            const files = e.dataTransfer.files;
-            if (files.length > 0) {
-                processPDF(files[0]);
-            }
-        });
-
-        function handleFileSelect(e) {
+        async function handleFileSelect(e) {
             const file = e.target.files[0];
             if (file) {
-                processPDF(file);
+                currentPDF = file;
+                await processFile(file);
             }
         }
 
-        function loadSavedTimesheets() {
-            const saved = localStorage.getItem('savedTimesheets');
-            if (saved) {
-                savedTimesheets = JSON.parse(saved);
-                updateTimesheetSelector();
-            }
-        }
-
-        function updateTimesheetSelector() {
-            const selector = document.getElementById('timesheetSelect');
-            const savedCount = document.getElementById('savedCount');
-            const timesheetSelectorDiv = document.getElementById('timesheetSelector');
-            
-            // Clear existing options
-            selector.innerHTML = '<option value="">Select a timesheet...</option>';
-            
-            const count = Object.keys(savedTimesheets).length;
-            savedCount.textContent = `${count} saved`;
-            
-            if (count > 0) {
-                timesheetSelectorDiv.style.display = 'block';
-                
-                // Add options for each saved timesheet
-                Object.entries(savedTimesheets).forEach(([id, timesheet]) => {
-                    const option = document.createElement('option');
-                    option.value = id;
-                    option.textContent = `${timesheet.fileName} - ${timesheet.uploadDate}`;
-                    selector.appendChild(option);
-                });
-            } else {
-                timesheetSelectorDiv.style.display = 'none';
-            }
-        }
-
-        function handleTimesheetSelect(e) {
-            const selectedId = e.target.value;
-            const deleteBtn = document.getElementById('deleteBtn');
-            
-            if (selectedId && savedTimesheets[selectedId]) {
-                currentTimesheetId = selectedId;
-                const timesheet = savedTimesheets[selectedId];
-                
-                // Load the timesheet data
-                extractedData = timesheet.data;
-                displayResults(timesheet.fileName, extractedData);
-                
-                // Load notes
-                document.getElementById('notesInput').value = timesheet.notes || '';
-                
-                deleteBtn.style.display = 'inline-block';
-            } else {
-                currentTimesheetId = null;
-                results.style.display = 'none';
-                document.getElementById('notesInput').value = '';
-                deleteBtn.style.display = 'none';
-            }
-        }
-
-        function updateCurrentTimesheetNotes() {
-            if (currentTimesheetId && savedTimesheets[currentTimesheetId]) {
-                savedTimesheets[currentTimesheetId].notes = document.getElementById('notesInput').value;
-                localStorage.setItem('savedTimesheets', JSON.stringify(savedTimesheets));
-            }
-        }
-
-        async function processPDF(file) {
+        async function processFile(file) {
             if (file.type !== 'application/pdf') {
                 showError('Please select a PDF file.');
                 return;
             }
 
             hideError();
-            showProgress();
-            results.style.display = 'none';
+            showProcessingStatus();
+            updateStatus('Reading PDF file...', 'processing');
 
             try {
                 const arrayBuffer = await file.arrayBuffer();
-                const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
-                
-                let allText = '';
-                const totalPages = pdf.numPages;
+                currentPDF = { arrayBuffer, name: file.name };
 
-                for (let i = 1; i <= totalPages; i++) {
-                    updateProgress((i / totalPages) * 50);
-                    const page = await pdf.getPage(i);
-                    const textContent = await page.getTextContent();
-                    const pageText = textContent.items.map(item => item.str).join(' ');
-                    allText += pageText + ' ';
+                switch (currentMethod) {
+                    case 'hybrid':
+                        await processHybrid(arrayBuffer, file.name);
+                        break;
+                    case 'ocr':
+                        await processOCR(arrayBuffer, file.name);
+                        break;
+                    case 'text':
+                        await processTextOnly(arrayBuffer, file.name);
+                        break;
+                    case 'manual':
+                        await processManualGuide(arrayBuffer, file.name);
+                        break;
                 }
-
-                updateProgress(75);
-                extractedData = parseTimesheetData(allText);
-                updateProgress(100);
-
-                displayResults(file.name, extractedData);
-                hideProgress();
-
-                // Clear current selection and notes for new upload
-                currentTimesheetId = null;
-                document.getElementById('timesheetSelect').value = '';
-                document.getElementById('notesInput').value = '';
-                document.getElementById('deleteBtn').style.display = 'none';
 
             } catch (err) {
                 console.error('Error processing PDF:', err);
-                showError('Error processing PDF file. Please try again.');
-                hideProgress();
+                updateStatus('Error processing PDF', 'error');
+                showError('Error processing PDF file. Try a different method.');
             }
         }
 
-        function parseTimesheetData(text) {
-            console.log('Full PDF text:', text);
+        async function processHybrid(arrayBuffer, fileName) {
+            updateStatus('Extracting text from PDF...', 'processing');
+            const textData = await extractTextFromPDF(arrayBuffer);
             
-            const rohanEntries = [];
+            updateStatus('Parsing text for Rohan entries...', 'processing');
+            let results = parseTextForRohan(textData);
             
-            // Split into lines and clean them
-            const lines = text.split('\n').map(line => line.trim()).filter(line => line.length > 0);
-            console.log('All lines:', lines);
+            if (results.length === 0) {
+                updateStatus('Text extraction failed, switching to OCR...', 'processing');
+                const ocrResults = await performOCR(arrayBuffer);
+                results = parseTextForRohan(ocrResults);
+            }
             
+            if (results.length === 0) {
+                updateStatus('No Rohan entries found with either method', 'error');
+                showError('Could not find Rohan\'s start times using text or OCR methods.');
+            } else {
+                updateStatus(`Found ${results.length} Rohan entries!`, 'complete');
+                displayResults(fileName, results);
+            }
+        }
+
+        async function processOCR(arrayBuffer, fileName) {
+            updateStatus('Converting PDF to images...', 'processing');
+            const images = await convertPDFToImages(arrayBuffer);
+            
+            updateStatus('Performing OCR on images...', 'processing');
+            const ocrText = await performOCROnImages(images);
+            
+            updateStatus('Parsing OCR results...', 'processing');
+            const results = parseTextForRohan(ocrText);
+            
+            if (results.length === 0) {
+                updateStatus('No Rohan entries found in OCR results', 'error');
+                showError('OCR could not find Rohan\'s start times. Try the hybrid method.');
+            } else {
+                updateStatus(`Found ${results.length} Rohan entries via OCR!`, 'complete');
+                displayResults(fileName, results);
+            }
+        }
+
+        async function processTextOnly(arrayBuffer, fileName) {
+            updateStatus('Extracting embedded text...', 'processing');
+            const textData = await extractTextFromPDF(arrayBuffer);
+            
+            updateStatus('Parsing for Rohan entries...', 'processing');
+            const results = parseTextForRohan(textData);
+            
+            if (results.length === 0) {
+                updateStatus('No Rohan entries found in text', 'error');
+                showError('Text extraction could not find Rohan\'s times. Try OCR or hybrid method.');
+            } else {
+                updateStatus(`Found ${results.length} Rohan entries!`, 'complete');
+                displayResults(fileName, results);
+            }
+        }
+
+        async function processManualGuide(arrayBuffer, fileName) {
+            updateStatus('Rendering PDF preview...', 'processing');
+            await showPDFPreview(arrayBuffer);
+            
+            updateStatus('Manual identification mode activated', 'complete');
+            showManualGuidance();
+        }
+
+        async function extractTextFromPDF(arrayBuffer) {
+            const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+            let allText = '';
+            
+            for (let i = 1; i <= pdf.numPages; i++) {
+                const page = await pdf.getPage(i);
+                const textContent = await page.getTextContent();
+                const pageText = textContent.items.map(item => item.str).join(' ');
+                allText += pageText + '\n';
+            }
+            
+            debugLog('Extracted Text:', allText);
+            return allText;
+        }
+
+        function parseTextForRohan(text) {
+            debugLog('Parsing text for Rohan:', text.slice(0, 500) + '...');
+            
+            const results = [];
+            const rohanPattern = /rohan/gi;
+            let match;
             let entryCounter = 1;
             
-            // Find all instances of "Rohan" and look for start times ABOVE each instance
-            for (let i = 0; i < lines.length; i++) {
-                const line = lines[i];
-                const lineLower = line.toLowerCase();
+            // Find all Rohan instances
+            const rohanPositions = [];
+            while ((match = rohanPattern.exec(text)) !== null) {
+                rohanPositions.push({
+                    index: match.index,
+                    context: text.slice(Math.max(0, match.index - 100), match.index + 100)
+                });
+            }
+            
+            debugLog(`Found ${rohanPositions.length} Rohan instances`);
+            
+            // For each Rohan, find preceding times
+            rohanPositions.forEach((rohan, index) => {
+                debugLog(`Processing Rohan ${index + 1}:`, rohan.context);
                 
-                if (lineLower.includes('rohan')) {
-                    console.log(`\n=== Found Rohan at line ${i}: "${line}" ===`);
+                // Look for time patterns before this Rohan
+                const textBefore = text.slice(0, rohan.index);
+                const timeMatches = [...textBefore.matchAll(/(\d{1,2}:\d{2})/g)];
+                
+                if (timeMatches.length > 0) {
+                    const closestTime = timeMatches[timeMatches.length - 1];
+                    const startTime = closestTime[1];
                     
-                    // Look backwards for the CLOSEST time pattern to get START time
-                    let startTimeFound = null;
-                    let sectionType = '';
-                    let foundAtLine = -1;
+                    // Determine location from context
+                    const contextText = text.slice(rohan.index - 200, rohan.index + 200);
+                    const location = determineLocation(contextText);
                     
-                    // Search backwards more carefully - look at each line individually
-                    for (let j = i - 1; j >= Math.max(0, i - 15); j--) {
-                        const prevLine = lines[j];
-                        console.log(`Checking line ${j}: "${prevLine}"`);
-                        
-                        // Look for ALL possible time patterns, not just ones with ranges
-                        const timePatterns = [
-                            /(\d{1,2}:\d{2})-\d{1,2}:\d{2}/,  // 9:30-18:00 format
-                            /^(\d{1,2}:\d{2})$/,              // Just 9:30 alone
-                            /(\d{1,2}:\d{2})\s/,              // 9:30 followed by space
-                        ];
-                        
-                        let matchFound = false;
-                        for (let pattern of timePatterns) {
-                            const timeMatch = prevLine.match(pattern);
-                            if (timeMatch) {
-                                startTimeFound = timeMatch[1];
-                                foundAtLine = j;
-                                matchFound = true;
-                                console.log(`*** FOUND TIME: ${startTimeFound} at line ${j} ***`);
-                                break;
+                    results.push({
+                        entry: entryCounter++,
+                        startTime: startTime,
+                        location: location,
+                        confidence: calculateConfidence(contextText, startTime),
+                        method: currentMethod
+                    });
+                    
+                    debugLog(`Added: ${startTime} at ${location}`);
+                }
+            });
+            
+            return results;
+        }
+
+        async function performOCR(arrayBuffer) {
+            const images = await convertPDFToImages(arrayBuffer);
+            return await performOCROnImages(images);
+        }
+
+        async function convertPDFToImages(arrayBuffer) {
+            const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+            const images = [];
+            
+            for (let i = 1; i <= pdf.numPages; i++) {
+                const page = await pdf.getPage(i);
+                const viewport = page.getViewport({ scale: 2.0 });
+                
+                const canvas = document.createElement('canvas');
+                const context = canvas.getContext('2d');
+                canvas.height = viewport.height;
+                canvas.width = viewport.width;
+                
+                await page.render({ canvasContext: context, viewport: viewport }).promise;
+                images.push(canvas.toDataURL());
+            }
+            
+            return images;
+        }
+
+        async function performOCROnImages(images) {
+            let allText = '';
+            
+            for (let i = 0; i < images.length; i++) {
+                updateStatus(`OCR processing page ${i + 1}/${images.length}...`, 'processing');
+                
+                try {
+                    const result = await Tesseract.recognize(images[i], 'eng', {
+                        logger: m => {
+                            if (m.status === 'recognizing text') {
+                                updateProgress(m.progress * 100);
                             }
                         }
-                        
-                        if (matchFound) break;
-                        
-                        // Track section headers for location context
-                        const prevLineLower = prevLine.toLowerCase();
-                        if (prevLineLower.includes('atm') || 
-                            prevLineLower.includes('dispatch') || 
-                            prevLineLower.includes('processing') ||
-                            prevLineLower.includes('batching') ||
-                            prevLineLower.includes('packer')) {
-                            sectionType = prevLine;
-                            console.log(`Found section header: ${sectionType}`);
-                        }
-                    }
-                    
-                    if (startTimeFound) {
-                        // Look for more context around the Rohan line and time line
-                        const contextLines = lines.slice(Math.max(0, foundAtLine - 3), foundAtLine + 3);
-                        console.log('Context around time:', contextLines);
-                        
-                        const location = determineLocationFromContext(sectionType, line, contextLines);
-                        const notes = extractNotesFromRohanLine(line);
-                        
-                        rohanEntries.push({
-                            entry: entryCounter++,
-                            startTime: startTimeFound,
-                            location: location,
-                            notes: notes,
-                            debugInfo: `Found at line ${i}, time from line ${foundAtLine}`
-                        });
-                        
-                        console.log(`✓ Added entry #${entryCounter-1}: ${startTimeFound} at ${location}`);
-                        console.log('Debug:', `Found at line ${i}, time from line ${foundAtLine}`);
-                    } else {
-                        console.log('✗ No start time found for this Rohan entry');
-                    }
+                    });
+                    allText += result.data.text + '\n';
+                } catch (err) {
+                    debugLog(`OCR failed for page ${i + 1}:`, err);
                 }
             }
             
-            console.log('\n=== ALL ROHAN ENTRIES ===');
-            rohanEntries.forEach(entry => {
-                console.log(`Entry ${entry.entry}: ${entry.startTime} - ${entry.location} (${entry.debugInfo})`);
-            });
-            
-            // Don't remove duplicates yet - let's see what we're getting first
-            console.log('Raw Rohan entries before deduplication:', rohanEntries);
-            
-            if (rohanEntries.length === 0) {
-                showError('Could not find any start times associated with Rohan in this roster.');
-                return [];
-            }
-            
-            return rohanEntries;
+            debugLog('OCR Result:', allText);
+            return allText;
         }
 
-        function extractNotesFromRohanLine(rohanLine) {
-            // Extract any additional context from the line with Rohan's name
-            if (rohanLine.toLowerCase().includes('atm')) {
-                return 'ATM duties';
-            }
-            if (rohanLine.toLowerCase().includes('dispatch')) {
-                return 'Dispatch duties';
-            }
-            return 'Regular duties';
-        }
-        
-        function determineLocationFromContext(sectionType, rohanLine, contextLines) {
-            // Combine all context to determine location
-            const allContext = (sectionType + ' ' + rohanLine + ' ' + contextLines.join(' ')).toLowerCase();
+        async function showPDFPreview(arrayBuffer) {
+            const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+            const page = await pdf.getPage(1);
+            const viewport = page.getViewport({ scale: 1.5 });
             
-            console.log('Location context:', allContext);
+            const canvas = document.getElementById('pdfCanvas');
+            const context = canvas.getContext('2d');
+            canvas.height = viewport.height;
+            canvas.width = viewport.width;
             
-            if (allContext.includes('atm') && allContext.includes('processing')) return 'ATM/Processing office';
-            if (allContext.includes('dispatch')) return 'Dispatch';
-            if (allContext.includes('batching')) return 'Batching';
-            if (allContext.includes('packer')) return 'Packer/CP';
-            if (allContext.includes('atm')) return 'ATM';
-            if (allContext.includes('processing')) return 'Processing office';
-            
-            return 'Office';
+            await page.render({ canvasContext: context, viewport: viewport }).promise;
+            document.getElementById('pdfPreview').style.display = 'block';
         }
 
-        function calculateHours(startTime, endTime) {
-            const start = new Date(`2000-01-01 ${startTime}`);
-            const end = new Date(`2000-01-01 ${endTime}`);
-            const diff = (end - start) / (1000 * 60 * 60);
-            return Math.max(0, diff).toFixed(2);
+        function showManualGuidance() {
+            const guidance = `
+                <h3>Manual Identification Guide:</h3>
+                <p>1. Look at the PDF preview above</p>
+                <p>2. Find each instance of "Rohan" in the roster</p>
+                <p>3. For each Rohan, look ABOVE to find the time range that applies</p>
+                <p>4. Note the START time from that range</p>
+                <p>5. Use the form below to enter the times you found:</p>
+            `;
+            
+            showError(guidance, false);
+            // Here you could add a manual input form if needed
         }
 
-        function formatDate(dateStr) {
-            try {
-                const date = new Date(dateStr);
-                return date.toLocaleDateString();
-            } catch {
-                return dateStr;
-            }
+        function determineLocation(context) {
+            const contextLower = context.toLowerCase();
+            
+            if (contextLower.includes('atm') && contextLower.includes('processing')) return 'ATM/Processing office';
+            if (contextLower.includes('dispatch')) return 'Dispatch';
+            if (contextLower.includes('batching')) return 'Batching';
+            if (contextLower.includes('packer')) return 'Packer/CP';
+            if (contextLower.includes('atm')) return 'ATM';
+            if (contextLower.includes('processing')) return 'Processing';
+            
+            return 'General';
         }
 
-        function extractLocation(text, index) {
-            // Look for location indicators around the match
-            const snippet = text.slice(Math.max(0, index - 100), index + 100);
-            const locationPattern = /(office|site|location|address|building|floor)\s*:?\s*([^,\n.]+)/i;
-            const match = snippet.match(locationPattern);
-            return match ? match[2].trim() : null;
+        function calculateConfidence(context, time) {
+            let confidence = 50; // Base confidence
+            
+            if (context.toLowerCase().includes('rohan')) confidence += 30;
+            if (time.match(/^\d{1,2}:\d{2}$/)) confidence += 20;
+            if (context.includes('-')) confidence += 10; // Likely time range
+            
+            return Math.min(100, confidence);
         }
 
         function displayResults(fileName, data) {
-            document.getElementById('fileName').textContent = `File: ${fileName} (Rohan's Start Times)`;
+            document.getElementById('fileName').textContent = `File: ${fileName}`;
             const tableBody = document.getElementById('tableBody');
             tableBody.innerHTML = '';
 
             if (data.length === 0) {
                 const row = tableBody.insertRow();
-                row.innerHTML = `<td colspan="4" style="text-align: center; color: #666; font-style: italic;">No start times found for Rohan in this roster</td>`;
-                results.style.display = 'block';
+                row.innerHTML = `<td colspan="5" style="text-align: center; color: #666; font-style: italic;">No start times found for Rohan</td>`;
+                document.getElementById('results').style.display = 'block';
                 return;
             }
             
@@ -739,36 +678,109 @@
                     <td><strong>#${entry.entry}</strong></td>
                     <td><strong>${entry.startTime}</strong></td>
                     <td>${entry.location}</td>
-                    <td>${entry.notes}</td>
+                    <td>${entry.confidence}%</td>
+                    <td>${entry.method}</td>
                 `;
             });
 
-            // Update summary to show number of shifts instead of hours
-            document.getElementById('totalDays').textContent = data.length;
-            document.getElementById('regularHours').textContent = `${data.length} shifts`;
-            document.getElementById('totalHours').textContent = `${data.length} total entries`;
-
-            results.style.display = 'block';
+            extractedData = data;
+            document.getElementById('results').style.display = 'block';
+            hideProcessingStatus();
         }
 
-        function exportToCSV() {
-            const headers = ['Entry', 'Start Time', 'Area/Location', 'Notes'];
+        function showProcessingStatus() {
+            document.getElementById('processingStatus').style.display = 'block';
+            document.getElementById('results').style.display = 'none';
+        }
+
+        function hideProcessingStatus() {
+            document.getElementById('processingStatus').style.display = 'none';
+        }
+
+        function updateStatus(message, status) {
+            const statusList = document.getElementById('statusList');
+            const statusItem = document.createElement('div');
+            statusItem.className = 'status-item';
+            
+            const icon = document.createElement('div');
+            icon.className = `status-icon status-${status}`;
+            icon.textContent = status === 'processing' ? '⟳' : status === 'complete' ? '✓' : status === 'error' ? '✗' : '○';
+            
+            const text = document.createElement('span');
+            text.textContent = message;
+            
+            statusItem.appendChild(icon);
+            statusItem.appendChild(text);
+            statusList.appendChild(statusItem);
+            
+            statusList.scrollTop = statusList.scrollHeight;
+        }
+
+        function updateProgress(percent) {
+            const progressBar = document.querySelector('.progress-bar');
+            const progress = document.querySelector('.progress');
+            progress.style.display = 'block';
+            progressBar.style.width = percent + '%';
+        }
+
+        function debugLog(label, content) {
+            const debugContent = document.getElementById('debugContent');
+            debugContent.innerHTML += `<div><strong>${label}</strong><br>${typeof content === 'string' ? content : JSON.stringify(content, null, 2)}</div><hr>`;
+        }
+
+        function toggleDebug() {
+            const panel = document.getElementById('debugPanel');
+            panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
+        }
+
+        function showError(message, isError = true) {
+            const errorDiv = document.getElementById('error');
+            errorDiv.innerHTML = message;
+            errorDiv.style.display = 'block';
+            if (!isError) {
+                errorDiv.style.background = 'linear-gradient(135deg, #a8edea, #fed6e3)';
+                errorDiv.style.color = '#333';
+            }
+        }
+
+        function hideError() {
+            document.getElementById('error').style.display = 'none';
+        }
+
+        async function tryDifferentMethod() {
+            if (!currentPDF) {
+                showError('Please upload a PDF first.');
+                return;
+            }
+            
+            // Show method selector and allow reprocessing
+            const methods = ['hybrid', 'ocr', 'text', 'manual'];
+            const currentIndex = methods.indexOf(currentMethod);
+            const nextMethod = methods[(currentIndex + 1) % methods.length];
+            
+            selectMethod(nextMethod);
+            await processFile(currentPDF);
+        }
+
+        function exportCSV() {
+            const headers = ['Entry', 'Start Time', 'Area/Location', 'Confidence', 'Method'];
             const csv = [
                 headers.join(','),
                 ...extractedData.map(row => [
                     row.entry,
                     row.startTime,
                     `"${row.location}"`,
-                    `"${row.notes}"`
+                    row.confidence + '%',
+                    row.method
                 ].join(','))
             ].join('\n');
 
-            downloadFile(csv, 'rohan_timesheet_data.csv', 'text/csv');
+            downloadFile(csv, 'rohan_timesheet_advanced.csv', 'text/csv');
         }
 
-        function exportToJSON() {
+        function exportJSON() {
             const json = JSON.stringify(extractedData, null, 2);
-            downloadFile(json, 'rohan_timesheet_data.json', 'application/json');
+            downloadFile(json, 'rohan_timesheet_advanced.json', 'application/json');
         }
 
         function downloadFile(content, filename, mimeType) {
@@ -781,89 +793,6 @@
             a.click();
             document.body.removeChild(a);
             URL.revokeObjectURL(url);
-        }
-
-        function saveTimesheet() {
-            if (!extractedData || extractedData.length === 0) {
-                showError('No timesheet data to save. Please upload and process a PDF first.');
-                return;
-            }
-
-            const fileName = document.getElementById('fileName').textContent.replace('File: ', '') || 'timesheet.pdf';
-            const notes = document.getElementById('notesInput').value;
-            const uploadDate = new Date().toLocaleDateString();
-            
-            // Generate unique ID
-            const id = Date.now().toString();
-            
-            // Create timesheet object
-            const timesheet = {
-                id,
-                fileName,
-                uploadDate,
-                data: [...extractedData],
-                notes
-            };
-            
-            // Save to localStorage
-            savedTimesheets[id] = timesheet;
-            localStorage.setItem('savedTimesheets', JSON.stringify(savedTimesheets));
-            
-            // Update UI
-            currentTimesheetId = id;
-            updateTimesheetSelector();
-            document.getElementById('timesheetSelect').value = id;
-            document.getElementById('deleteBtn').style.display = 'inline-block';
-            
-            // Show success message
-            const originalText = document.querySelector('.results-header h2').textContent;
-            document.querySelector('.results-header h2').textContent = '✅ Timesheet Saved Successfully!';
-            setTimeout(() => {
-                document.querySelector('.results-header h2').textContent = originalText;
-            }, 2000);
-        }
-
-        function deleteSelectedTimesheet() {
-            if (!currentTimesheetId || !savedTimesheets[currentTimesheetId]) {
-                return;
-            }
-            
-            if (confirm('Are you sure you want to delete this timesheet?')) {
-                delete savedTimesheets[currentTimesheetId];
-                localStorage.setItem('savedTimesheets', JSON.stringify(savedTimesheets));
-                
-                // Reset UI
-                currentTimesheetId = null;
-                extractedData = [];
-                document.getElementById('timesheetSelect').value = '';
-                document.getElementById('notesInput').value = '';
-                document.getElementById('deleteBtn').style.display = 'none';
-                results.style.display = 'none';
-                
-                updateTimesheetSelector();
-            }
-        }
-
-        function showProgress() {
-            progress.style.display = 'block';
-        }
-
-        function hideProgress() {
-            progress.style.display = 'none';
-            progressBar.style.width = '0%';
-        }
-
-        function updateProgress(percent) {
-            progressBar.style.width = percent + '%';
-        }
-
-        function showError(message) {
-            error.textContent = message;
-            error.style.display = 'block';
-        }
-
-        function hideError() {
-            error.style.display = 'none';
         }
     </script>
 </body>
