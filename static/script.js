@@ -99,7 +99,6 @@ class TimesheetParser {
         const stored = this.getStoredData();
         const key = data.week_ending || data.dates.join('/');
         
-        // Check for overlapping dates and remove old records
         const datesToCheck = data.dates.filter(d => d);
         const keysToRemove = [];
         
@@ -110,14 +109,12 @@ class TimesheetParser {
             }
         }
         
-        // Remove overlapping records
         keysToRemove.forEach(oldKey => {
             if (oldKey !== key) {
                 delete stored[oldKey];
             }
         });
         
-        // Add new record
         stored[key] = data;
         localStorage.setItem('timesheetData', JSON.stringify(stored));
     }
@@ -131,10 +128,7 @@ class TimesheetParser {
     }
 
     loadStoredData() {
-        const stored = this.getStoredData();
-        if (Object.keys(stored).length > 0) {
-            this.refreshWeekList();
-        }
+        this.refreshWeekList();
     }
 
     refreshWeekList() {
@@ -144,4 +138,68 @@ class TimesheetParser {
         if (weeks.length === 0) {
             this.weekSelect.innerHTML = '<option value="">No weeks available</option>';
             this.weekSection.style.display = 'none';
-            this
+            this.resultsSection.style.display = 'none';
+            return;
+        }
+
+        this.weekSection.style.display = 'block';
+        this.weekSelect.innerHTML = '';
+        
+        // Sort weeks by date
+        weeks.sort(([keyA], [keyB]) => new Date(keyB.split('/')[2], keyB.split('/')[1]-1, keyB.split('/')[0]) - new Date(keyA.split('/')[2], keyA.split('/')[1]-1, keyA.split('/')[0]));
+
+        weeks.forEach(([key]) => {
+            const option = document.createElement('option');
+            option.value = key;
+            option.textContent = `Week Ending: ${key}`;
+            this.weekSelect.appendChild(option);
+        });
+
+        this.displaySelectedWeek();
+    }
+
+    displaySelectedWeek() {
+        const selectedKey = this.weekSelect.value;
+        if (!selectedKey) {
+            this.resultsSection.style.display = 'none';
+            return;
+        }
+
+        const stored = this.getStoredData();
+        const weekData = stored[selectedKey];
+
+        if (!weekData) {
+            this.resultsSection.style.display = 'none';
+            return;
+        }
+
+        this.resultsSection.style.display = 'block';
+        this.scheduleBody.innerHTML = '';
+
+        const daysOrder = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"];
+        daysOrder.forEach(dayName => {
+            const day = weekData.days[dayName];
+            const row = document.createElement('tr');
+            
+            const noteText = day.note ? `<span class="note">${day.note}</span>` : '';
+            const startText = day.start ? `${day.start} ${noteText}`.trim() : 'Off';
+
+            row.innerHTML = `
+                <td>${dayName}<br><span class="date">${day.date || ''}</span></td>
+                <td>${startText}</td>
+            `;
+            this.scheduleBody.appendChild(row);
+        });
+    }
+
+    showStatus(message, type) {
+        this.uploadStatus.textContent = message;
+        this.uploadStatus.className = `status-${type}`;
+        this.uploadStatus.style.display = 'block';
+    }
+}
+
+// Initialize the application
+document.addEventListener('DOMContentLoaded', () => {
+    new TimesheetParser();
+});
