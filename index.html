@@ -1,320 +1,11 @@
-function parseTimesheetData(text) {
-            console.log('Full PDF text:', text);
-            
-            const rohanEntries = [];
-            
-            // Split into lines and clean them
-            const lines = text.split('\n').map(line => line.trim()).filter(line => line.length > 0);
-            console.log('All lines:', lines);
-            
-            let entryCounter = 1;
-            
-            // Find all instances of "Rohan" and look for start times ABOVE each instance
-            for (let i = 0; i < lines.length; i++) {
-                const line = lines[i];
-                const lineLower = line.toLowerCase();
-                
-                if (lineLower.includes('rohan')) {
-                    console.log(`Found Rohan at line ${i}:`, line);
-                    
-                    // Look backwards for the nearest time pattern to get START time
-                    let startTimeFound = null;
-                    let sectionType = '';
-                    
-                    for (let j = i - 1; j >= 0; j--) {
-                        const prevLine = lines[j];
-                        console.log(`Checking line ${j} above Rohan:`, prevLine);
-                        
-                        // Look for time patterns and extract just the start time
-                        const timeMatch = prevLine.match(/(\d{1,2}:\d{2})-\d{1,2}:\d{2}/);
-                        
-                        if (timeMatch) {
-                            startTimeFound = timeMatch[1]; // Just the start time
-                            console.log(`Found start time above Rohan: ${startTimeFound}`);
-                            break;
-                        }
-                        
-                        // Also track section headers for location context
-                        if (prevLine.toLowerCase().includes('atm') || 
-                            prevLine.toLowerCase().includes('dispatch') || 
-                            prevLine.toLowerCase().includes('processing') ||
-                            prevLine.toLowerCase().includes('batching')) {
-                            sectionType = prevLine;
-                        }
-                        
-                        // Don't look too far back
-                        if (j < i - 10) break;
-                    }
-                    
-                    if (startTimeFound) {
-                        const location = determineLocationFromContext(sectionType, line);
-                        const notes = extractNotesFromRohanLine(line);
-                        
-                        rohanEntries.push({
-                            entry: entryCounter++,
-                            startTime: startTimeFound,
-                            location: location,
-                            notes: notes
-                        });
-                        
-                        console.log(`Added entry #${entryCounter-1}: ${startTimeFound} at ${location}`);
-                    }
-                }
-            }
-            
-            // Remove duplicates based on start time and location
-            const uniqueEntries = removeDuplicateEntries(rohanEntries);
-            console.log('Final Rohan entries:', uniqueEntries);
-            
-            if (uniqueEntries.length === 0) {
-                showError('Could not find any start times associated with Rohan in this roster.');
-                return [];
-            }
-            
-            return uniqueEntries;
-        }
-        
-        function extractNotesFromRohanLine(rohanLine) {
-            // Extract any additional context from the line with Rohan's name
-            if (rohanLine.toLowerCase().includes('atm')) {
-                return 'ATM duties';
-            }
-            if (rohanLine.toLowerCase().includes('dispatch')) {
-                return 'Dispatch duties';
-            }
-            return 'Regular duties';
-        }
-        
-        function determineLocationFromContext(sectionType, rohanLine) {
-            const combined = (sectionType + ' ' + rohanLine).toLowerCase();
-            
-            if (combined.includes('atm') && combined.includes('processing')) return 'ATM/Processing office';
-            if (combined.includes('atm')) return 'ATM';
-            if (combined.includes('dispatch')) return 'Dispatch';
-            if (combined.includes('processing')) return 'Processing office';
-            if (combined.includes('batching')) return 'Batching';
-            if (combined.includes('packer')) return 'Packer/CP';
-            
-            return 'Office';
-        }
-        
-        function removeDuplicateEntries(entries) {
-            const seen = new Set();
-            return entries.filter(entry => {
-                const key = `${entry.startTime}-${entry.location}`;
-                if (seen.has(key)) return false;
-                seen.add(key);
-                return true;
-            });
-        }        function parseTimesheetData(text) {
-            console.log('Full PDF text:', text); // Debug log
-            
-            // Clean and normalize the text
-            const cleanText = text.replace(/\s+/g, ' ').trim();
-            
-            // Find all instances of "Rohan" with context
-            const rohanEntries = [];
-            const days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
-            
-            // Split into lines for easier processing
-            const lines = text.split('\n').map(line => line.trim()).filter(line => line.length > 0);
-            
-            console.log('Processing lines:', lines);
-            
-            // Look for Rohan in each line and extract associated times
-            for (let i = 0; i < lines.length; i++) {
-                const line = lines[i];
-                const lineLower = line.toLowerCase();
-                
-                if (lineLower.includes('rohan')) {
-                    console.log(`Found Rohan in line ${i}:`, line);
-                    
-                    // Extract times from this line or nearby lines
-                    const times = extractTimesFromContext(lines, i);
-                    
-                    times.forEach((timeEntry, dayIndex) => {
-                        if (timeEntry.startTime && timeEntry.endTime && dayIndex < days.length) {
-                            const hours = calculateHours(timeEntry.startTime, timeEntry.endTime);
-                            
-                            rohanEntries.push({
-                                day: days[dayIndex],
-                                startTime: timeEntry.startTime,
-                                endTime: timeEntry.endTime,
-                                hours: parseFloat(hours) || 0,
-                                location: timeEntry.location
-                            });
-                        }
-                    });
-                }
-            }
-            
-            // If we didn't get good results, try a different approach
-            if (rohanEntries.length === 0) {
-                return parseRosterByColumns(text);
-            }
-            
-            console.log('Final Rohan entries:', rohanEntries);
-            return rohanEntries;
-        }
-        
-        function extractTimesFromContext(lines, rohanLineIndex) {
-            const times = [];
-            
-            // Look for time patterns in the current line and nearby lines
-            for (let i = Math.max(0, rohanLineIndex - 2); i <= Math.min(lines.length - 1, rohanLineIndex + 2); i++) {
-                const line = lines[i];
-                const timeMatches = line.match(/(\d{1,2}:\d{2})-(\d{1,2}:\d{2})/g);
-                
-                if (timeMatches) {
-                    console.log(`Found times in line ${i}:`, timeMatches);
-                    
-                    timeMatches.forEach(timeRange => {
-                        const timeParts = timeRange.match(/(\d{1,2}:\d{2})-(\d{1,2}:\d{2})/);
-                        if (timeParts) {
-                            times.push({
-                                startTime: timeParts[1],
-                                endTime: timeParts[2],
-                                location: determineLocation(lines[i], lines[rohanLineIndex])
-                            });
-                        }
-                    });
-                }
-            }
-            
-            return times;
-        }
-        
-        function parseRosterByColumns(text) {
-            const entries = [];
-            
-            // Based on your sample, let's manually map what we can see:
-            // From the PDF structure, Rohan appears to work:
-            
-            // Method: Look for specific patterns we know exist
-            const patterns = [
-                // Thursday: "10:30-16:30" with "Rohan"
-                { day: 'Thursday', time: '10:30-16:30', location: 'ATM/Processing office' },
-                // Look for other Rohan entries in different sections
-            ];
-            
-            // Try to extract from the actual text structure
-            const textLines = text.split('\n');
-            
-            // Look for the specific roster structure
-            let inTimeSection = false;
-            let currentTimes = [];
-            let sectionType = '';
-            
-            for (let i = 0; i < textLines.length; i++) {
-                const line = textLines[i].trim();
-                const lineLower = line.toLowerCase();
-                
-                // Identify section types
-                if (lineLower.includes('atm') && lineLower.includes('processing')) {
-                    sectionType = 'ATM/Processing office';
-                    inTimeSection = true;
-                } else if (lineLower.includes('packer')) {
-                    sectionType = 'Packer/CP';
-                    inTimeSection = true;
-                } else if (lineLower.includes('batching')) {
-                    sectionType = 'Batching';
-                    inTimeSection = true;
-                } else if (lineLower.includes('dispatch')) {
-                    sectionType = 'Dispatch';
-                    inTimeSection = true;
-                }
-                
-                // Extract times from current line
-                const timeMatches = line.match(/(\d{1,2}:\d{2})-(\d{1,2}:\d{2})/g);
-                if (timeMatches && inTimeSection) {
-                    currentTimes = timeMatches;
-                    console.log(`Found times in ${sectionType}:`, currentTimes);
-                }
-                
-                // Check if Rohan is mentioned in subsequent lines
-                if (lineLower.includes('rohan') && currentTimes.length > 0) {
-                    console.log(`Found Rohan in ${sectionType} with times:`, currentTimes);
-                    
-                    // Determine which day(s) Rohan works based on position
-                    const rohanDays = findRohanDays(line, currentTimes);
-                    
-                    rohanDays.forEach(entry => {
-                        const hours = calculateHours(entry.startTime, entry.endTime);
-                        entries.push({
-                            day: entry.day,
-                            startTime: entry.startTime,
-                            endTime: entry.endTime,
-                            hours: parseFloat(hours) || 0,
-                            location: sectionType
-                        });
-                    });
-                }
-                
-                // Reset when we hit a new section
-                if (line.includes('Monday') || line.includes('Tuesday')) {
-                    inTimeSection = false;
-                    currentTimes = [];
-                }
-            }
-            
-            return entries;
-        }
-        
-        function findRohanDays(rohanLine, times) {
-            const days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
-            const entries = [];
-            
-            // Simple approach: if we see "Rohan" and times, try to match them
-            // Based on the sample, we know Rohan works specific days
-            
-            if (times.length >= 5) {
-                // Full week schedule - check which positions have Rohan
-                times.forEach((timeRange, index) => {
-                    if (index < days.length) {
-                        const timeParts = timeRange.match(/(\d{1,2}:\d{2})-(\d{1,2}:\d{2})/);
-                        if (timeParts) {
-                            entries.push({
-                                day: days[index],
-                                startTime: timeParts[1],
-                                endTime: timeParts[2]
-                            });
-                        }
-                    }
-                });
-            } else {
-                // Specific day assignment
-                times.forEach(timeRange => {
-                    const timeParts = timeRange.match(/(\d{1,2}:\d{2})-(\d{1,2}:\d{2})/);
-                    if (timeParts) {
-                        entries.push({
-                            day: 'Thursday', // Default to Thursday based on sample
-                            startTime: timeParts[1],
-                            endTime: timeParts[2]
-                        });
-                    }
-                });
-            }
-            
-            return entries;
-        }
-        
-        function determineLocation(timeLine, rohanLine) {
-            const combined = (timeLine + ' ' + rohanLine).toLowerCase();
-            
-            if (combined.includes('atm')) return 'ATM';
-            if (combined.includes('dispatch')) return 'Dispatch';
-            if (combined.includes('processing')) return 'Processing office';
-            if (combined.includes('packer')) return 'Packer/CP';
-            if (combined.includes('batching')) return 'Batching';
-            
-            return 'General';
-        }
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Timesheet PDF Parser</title>
+    <meta name="description" content="Extract and analyze Rohan's timesheet data from PDF files">
+    <meta name="author" content="Timesheet Parser">
+    <title>Rohan's Timesheet Parser</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
     <style>
         * {
@@ -640,8 +331,8 @@ function parseTimesheetData(text) {
 <body>
     <div class="container">
         <div class="header">
-            <h1>📊 Timesheet Parser</h1>
-            <p>Extract and analyze timesheet data from PDF files</p>
+            <h1>📊 Rohan's Timesheet Parser</h1>
+            <p>Extract and analyze Rohan's timesheet data from PDF files</p>
         </div>
 
         <div class="content">
@@ -878,262 +569,132 @@ function parseTimesheetData(text) {
         }
 
         function parseTimesheetData(text) {
-            const data = [];
+            console.log('Full PDF text:', text);
             
-            console.log('Full PDF text:', text); // Debug log
+            const rohanEntries = [];
             
-            // First, let's identify the column structure
+            // Split into lines and clean them
             const lines = text.split('\n').map(line => line.trim()).filter(line => line.length > 0);
+            console.log('All lines:', lines);
             
-            // Find date headers (should be the first line with dates)
-            let dateLineIndex = -1;
-            let dates = [];
+            let entryCounter = 1;
             
+            // Find all instances of "Rohan" and look for start times ABOVE each instance
             for (let i = 0; i < lines.length; i++) {
                 const line = lines[i];
-                // Look for date pattern: DD.MM.YYYY
-                const dateMatches = line.match(/\d{2}\.\d{2}\.\d{4}/g);
-                if (dateMatches && dateMatches.length >= 3) {
-                    dateLineIndex = i;
-                    dates = dateMatches;
-                    console.log('Found dates:', dates);
-                    break;
-                }
-            }
-            
-            if (dateLineIndex === -1) {
-                showError('Could not find date headers in the roster format.');
-                return [];
-            }
-            
-            // Now let's find all instances of "Rohan" and their associated times
-            const rohanEntries = findRohanEntries(text, dates);
-            
-            if (rohanEntries.length === 0) {
-                showError('No entries found for Rohan in this roster.');
-                return [];
-            }
-            
-            console.log('Rohan entries found:', rohanEntries);
-            return rohanEntries.sort((a, b) => new Date(a.date) - new Date(b.date));
-        }
-        
-        function findRohanEntries(text, dates) {
-            const entries = [];
-            
-            // Split text into manageable sections and look for Rohan entries
-            const sections = text.split(/\n+/);
-            
-            // Method 1: Look for "Rohan" followed by time patterns in the same section
-            for (let section of sections) {
-                if (section.toLowerCase().includes('rohan')) {
-                    console.log('Section with Rohan:', section);
-                    
-                    // Extract time patterns from this section
-                    const timeMatches = section.match(/(\d{1,2}:\d{2})-?(\d{1,2}:\d{2})/g);
-                    
-                    if (timeMatches) {
-                        // Try to correlate times with dates
-                        timeMatches.forEach((timeMatch, index) => {
-                            const timeParts = timeMatch.match(/(\d{1,2}:\d{2})-?(\d{1,2}:\d{2})/);
-                            if (timeParts && index < dates.length) {
-                                const startTime = timeParts[1];
-                                const endTime = timeParts[2];
-                                const hours = calculateHours(startTime, endTime);
-                                
-                                // Determine if this is ATM work
-                                const isATM = section.toLowerCase().includes('atm');
-                                const location = isATM ? 'ATM' : 'Processing';
-                                
-                                entries.push({
-                                    date: formatDate(dates[index]),
-                                    startTime: startTime,
-                                    endTime: endTime,
-                                    hours: parseFloat(hours) || 0,
-                                    location: location
-                                });
-                            }
-                        });
-                    }
-                }
-            }
-            
-            // Method 2: More specific parsing based on the actual structure
-            if (entries.length === 0) {
-                entries.push(...parseRosterStructure(text, dates));
-            }
-            
-            return entries;
-        }
-        
-        function parseRosterStructure(text, dates) {
-            const entries = [];
-            
-            // Known Rohan entries from the sample:
-            // Thursday 04.09.2025: 10:30-16:30 (ATM/Processing office)
-            // Monday 01.09.2025: 7:00-13:00 (ATM)
-            // Wednesday 03.09.2025: 6:30-12:30 (ATM)
-            // Thursday 04.09.2025: 6:30-14:30 (Dispatch)
-            // Friday 05.09.2025: 6:30-15:30 (Dispatch)
-            
-            // Let's use the specific patterns we can see in the text
-            const rohanPatterns = [
-                // Look for Rohan in different contexts
-                /rohan\s*\(?\s*atm\s*\)?/gi,
-                /rohan(?!\s*\()/gi, // Rohan not followed by parentheses
-            ];
-            
-            // Parse the specific structure we can see
-            const textLines = text.split('\n');
-            let currentSection = '';
-            let currentTimes = [];
-            
-            for (let i = 0; i < textLines.length; i++) {
-                const line = textLines[i].trim();
+                const lineLower = line.toLowerCase();
                 
-                // Check if this line contains time ranges
-                const timeMatches = line.match(/\d{1,2}:\d{2}-\d{1,2}:\d{2}/g);
-                if (timeMatches) {
-                    currentTimes = timeMatches;
-                    currentSection = line;
-                }
-                
-                // Check if next lines contain Rohan
-                if (i + 1 < textLines.length) {
-                    const nextLine = textLines[i + 1].trim();
-                    if (nextLine.toLowerCase().includes('rohan') && currentTimes.length > 0) {
-                        // Found Rohan associated with times
-                        const rohanText = nextLine;
-                        const isATM = rohanText.toLowerCase().includes('atm');
+                if (lineLower.includes('rohan')) {
+                    console.log(`\n=== Found Rohan at line ${i}: "${line}" ===`);
+                    
+                    // Look backwards for the CLOSEST time pattern to get START time
+                    let startTimeFound = null;
+                    let sectionType = '';
+                    let foundAtLine = -1;
+                    
+                    // Search backwards more carefully - look at each line individually
+                    for (let j = i - 1; j >= Math.max(0, i - 15); j--) {
+                        const prevLine = lines[j];
+                        console.log(`Checking line ${j}: "${prevLine}"`);
                         
-                        // Map times to dates
-                        currentTimes.forEach((timeRange, index) => {
-                            if (index < dates.length) {
-                                const timeParts = timeRange.match(/(\d{1,2}:\d{2})-(\d{1,2}:\d{2})/);
-                                if (timeParts) {
-                                    const startTime = timeParts[1];
-                                    const endTime = timeParts[2];
-                                    const hours = calculateHours(startTime, endTime);
-                                    
-                                    entries.push({
-                                        date: formatDate(dates[index]),
-                                        startTime: startTime,
-                                        endTime: endTime,
-                                        hours: parseFloat(hours) || 0,
-                                        location: isATM ? 'ATM' : 'Office'
-                                    });
-                                }
+                        // Look for ALL possible time patterns, not just ones with ranges
+                        const timePatterns = [
+                            /(\d{1,2}:\d{2})-\d{1,2}:\d{2}/,  // 9:30-18:00 format
+                            /^(\d{1,2}:\d{2})$/,              // Just 9:30 alone
+                            /(\d{1,2}:\d{2})\s/,              // 9:30 followed by space
+                        ];
+                        
+                        let matchFound = false;
+                        for (let pattern of timePatterns) {
+                            const timeMatch = prevLine.match(pattern);
+                            if (timeMatch) {
+                                startTimeFound = timeMatch[1];
+                                foundAtLine = j;
+                                matchFound = true;
+                                console.log(`*** FOUND TIME: ${startTimeFound} at line ${j} ***`);
+                                break;
                             }
+                        }
+                        
+                        if (matchFound) break;
+                        
+                        // Track section headers for location context
+                        const prevLineLower = prevLine.toLowerCase();
+                        if (prevLineLower.includes('atm') || 
+                            prevLineLower.includes('dispatch') || 
+                            prevLineLower.includes('processing') ||
+                            prevLineLower.includes('batching') ||
+                            prevLineLower.includes('packer')) {
+                            sectionType = prevLine;
+                            console.log(`Found section header: ${sectionType}`);
+                        }
+                    }
+                    
+                    if (startTimeFound) {
+                        // Look for more context around the Rohan line and time line
+                        const contextLines = lines.slice(Math.max(0, foundAtLine - 3), foundAtLine + 3);
+                        console.log('Context around time:', contextLines);
+                        
+                        const location = determineLocationFromContext(sectionType, line, contextLines);
+                        const notes = extractNotesFromRohanLine(line);
+                        
+                        rohanEntries.push({
+                            entry: entryCounter++,
+                            startTime: startTimeFound,
+                            location: location,
+                            notes: notes,
+                            debugInfo: `Found at line ${i}, time from line ${foundAtLine}`
                         });
+                        
+                        console.log(`✓ Added entry #${entryCounter-1}: ${startTimeFound} at ${location}`);
+                        console.log('Debug:', `Found at line ${i}, time from line ${foundAtLine}`);
+                    } else {
+                        console.log('✗ No start time found for this Rohan entry');
                     }
                 }
             }
             
-            // If still no entries, let's try a more direct approach based on the sample
-            if (entries.length === 0) {
-                // Manually extract from the known structure
-                const knownEntries = extractKnownRohanEntries(text, dates);
-                entries.push(...knownEntries);
-            }
-            
-            return entries;
-        }
-        
-        function extractKnownRohanEntries(text, dates) {
-            const entries = [];
-            
-            // Based on the sample PDF, let's extract specific patterns
-            const dayNames = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
-            
-            // Create a map of day positions to dates
-            const dayToDate = {};
-            dates.forEach((date, index) => {
-                if (index < dayNames.length) {
-                    dayToDate[dayNames[index]] = date;
-                }
+            console.log('\n=== ALL ROHAN ENTRIES ===');
+            rohanEntries.forEach(entry => {
+                console.log(`Entry ${entry.entry}: ${entry.startTime} - ${entry.location} (${entry.debugInfo})`);
             });
             
-            // Look for specific Rohan patterns in the text
-            const textLower = text.toLowerCase();
+            // Don't remove duplicates yet - let's see what we're getting first
+            console.log('Raw Rohan entries before deduplication:', rohanEntries);
             
-            // Pattern 1: "10:30-16:30" followed by "Rohan" (Thursday)
-            if (textLower.includes('10:30-16:30') && textLower.includes('rohan')) {
-                entries.push({
-                    date: formatDate(dates[3]), // Thursday (index 3)
-                    startTime: '10:30',
-                    endTime: '16:30',
-                    hours: 6,
-                    location: 'ATM/Processing office'
-                });
+            if (rohanEntries.length === 0) {
+                showError('Could not find any start times associated with Rohan in this roster.');
+                return [];
             }
             
-            // Pattern 2: Look for Rohan (ATM) entries
-            const atmPattern = /rohan\s*\(\s*atm\s*\)/gi;
-            const matches = [...textLower.matchAll(atmPattern)];
-            
-            if (matches.length > 0) {
-                // Add some likely ATM shifts for Rohan
-                entries.push({
-                    date: formatDate(dates[0]), // Monday
-                    startTime: '07:00',
-                    endTime: '13:00',
-                    hours: 6,
-                    location: 'ATM'
-                });
-                
-                entries.push({
-                    date: formatDate(dates[2]), // Wednesday
-                    startTime: '06:30',
-                    endTime: '12:30',
-                    hours: 6,
-                    location: 'ATM'
-                });
-            }
-            
-            // Pattern 3: Dispatch entries
-            if (textLower.includes('dispatch') && textLower.includes('rohan')) {
-                entries.push({
-                    date: formatDate(dates[3]), // Thursday
-                    startTime: '06:30',
-                    endTime: '14:30',
-                    hours: 8,
-                    location: 'Dispatch'
-                });
-                
-                entries.push({
-                    date: formatDate(dates[4]), // Friday
-                    startTime: '06:30',
-                    endTime: '15:30',
-                    hours: 9,
-                    location: 'Dispatch'
-                });
-            }
-            
-            return entries;
+            return rohanEntries;
         }
 
-        function extractFallbackData(text) {
-            const data = [];
-            
-            // Look for any time patterns
-            const timePattern = /(\d{1,2}:\d{2})/g;
-            const datePattern = /(\d{1,2}\/\d{1,2}\/\d{4}|\d{1,2}-\d{1,2}-\d{4})/g;
-            
-            const times = [...text.matchAll(timePattern)].map(m => m[1]);
-            const dates = [...text.matchAll(datePattern)].map(m => m[1]);
-            
-            // Create sample entries if we found some patterns
-            for (let i = 0; i < Math.min(dates.length, Math.floor(times.length / 2)); i++) {
-                data.push({
-                    date: formatDate(dates[i]),
-                    startTime: times[i * 2] || '09:00',
-                    endTime: times[i * 2 + 1] || '17:00',
-                    hours: 8,
-                    location: 'Extracted from PDF'
-                });
+        function extractNotesFromRohanLine(rohanLine) {
+            // Extract any additional context from the line with Rohan's name
+            if (rohanLine.toLowerCase().includes('atm')) {
+                return 'ATM duties';
             }
+            if (rohanLine.toLowerCase().includes('dispatch')) {
+                return 'Dispatch duties';
+            }
+            return 'Regular duties';
+        }
+        
+        function determineLocationFromContext(sectionType, rohanLine, contextLines) {
+            // Combine all context to determine location
+            const allContext = (sectionType + ' ' + rohanLine + ' ' + contextLines.join(' ')).toLowerCase();
             
-            return data;
+            console.log('Location context:', allContext);
+            
+            if (allContext.includes('atm') && allContext.includes('processing')) return 'ATM/Processing office';
+            if (allContext.includes('dispatch')) return 'Dispatch';
+            if (allContext.includes('batching')) return 'Batching';
+            if (allContext.includes('packer')) return 'Packer/CP';
+            if (allContext.includes('atm')) return 'ATM';
+            if (allContext.includes('processing')) return 'Processing office';
+            
+            return 'Office';
         }
 
         function calculateHours(startTime, endTime) {
@@ -1191,24 +752,23 @@ function parseTimesheetData(text) {
         }
 
         function exportToCSV() {
-            const headers = ['Date', 'Start Time', 'End Time', 'Hours', 'Location'];
+            const headers = ['Entry', 'Start Time', 'Area/Location', 'Notes'];
             const csv = [
                 headers.join(','),
                 ...extractedData.map(row => [
-                    row.date,
+                    row.entry,
                     row.startTime,
-                    row.endTime,
-                    row.hours,
-                    `"${row.location}"`
+                    `"${row.location}"`,
+                    `"${row.notes}"`
                 ].join(','))
             ].join('\n');
 
-            downloadFile(csv, 'timesheet_data.csv', 'text/csv');
+            downloadFile(csv, 'rohan_timesheet_data.csv', 'text/csv');
         }
 
         function exportToJSON() {
             const json = JSON.stringify(extractedData, null, 2);
-            downloadFile(json, 'timesheet_data.json', 'application/json');
+            downloadFile(json, 'rohan_timesheet_data.json', 'application/json');
         }
 
         function downloadFile(content, filename, mimeType) {
