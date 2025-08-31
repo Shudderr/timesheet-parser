@@ -7,7 +7,6 @@ class TimesheetParser {
     }
 
     init() {
-        // Get DOM elements
         this.uploadArea = document.getElementById('uploadArea');
         this.fileInput = document.getElementById('fileInput');
         this.uploadStatus = document.getElementById('uploadStatus');
@@ -16,8 +15,6 @@ class TimesheetParser {
         this.refreshBtn = document.getElementById('refreshBtn');
         this.resultsSection = document.getElementById('resultsSection');
         this.scheduleBody = document.getElementById('scheduleBody');
-
-        // Setup event listeners
         this.setupEventListeners();
     }
 
@@ -73,14 +70,12 @@ class TimesheetParser {
         const stored = this.getStoredData();
         const key = data.week_ending || data.dates.join('/');
         const datesToCheck = data.dates.filter(d => d);
-        const keysToRemove = [];
         for (const [existingKey, existingData] of Object.entries(stored)) {
             const existingDates = existingData.dates || [];
-            if (datesToCheck.some(date => existingDates.includes(date))) {
-                keysToRemove.push(existingKey);
+            if (datesToCheck.some(date => existingDates.includes(date)) && existingKey !== key) {
+                delete stored[existingKey];
             }
         }
-        keysToRemove.forEach(oldKey => { if (oldKey !== key) { delete stored[oldKey]; } });
         stored[key] = data;
         localStorage.setItem('timesheetData', JSON.stringify(stored));
     }
@@ -128,17 +123,23 @@ class TimesheetParser {
             const day = weekData.days[dayName];
             const row = document.createElement('tr');
             
-            // CHANGED: Logic to build the notes cell with both area and note
+            // CHANGED: Format the full time range
+            let timeText = 'Off';
+            if (day.start && day.end) {
+                timeText = `${day.start} - ${day.end}`;
+            } else if (day.start) {
+                timeText = day.start; // Fallback
+            }
+
             const notes = [];
             if (day.area) notes.push(day.area);
             if (day.note) notes.push(day.note);
             const notesText = notes.join(', ');
 
-            // CHANGED: HTML structure now creates four <td> cells to match the headers
             row.innerHTML = `
                 <td>${dayName}</td>
                 <td>${day.date || ''}</td>
-                <td>${day.start || 'Off'}</td>
+                <td>${timeText}</td>
                 <td>${notesText}</td>
             `;
             this.scheduleBody.appendChild(row);
