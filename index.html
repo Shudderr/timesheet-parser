@@ -372,7 +372,7 @@
                 <table class="data-table" id="dataTable">
                     <thead>
                         <tr>
-                            <th>Entry #</th>
+                            <th>Day</th>
                             <th>Start Time</th>
                             <th>Area/Location</th>
                             <th>Notes</th>
@@ -385,16 +385,12 @@
                 <div class="summary">
                     <h3>📈 Summary</h3>
                     <div class="summary-item">
-                        <span>Total Entries:</span>
-                        <span id="totalDays">0</span>
+                        <span>Total Shifts:</span>
+                        <span id="totalShifts">0</span>
                     </div>
                     <div class="summary-item">
-                        <span>Start Times Found:</span>
-                        <span id="regularHours">0</span>
-                    </div>
-                    <div class="summary-item">
-                        <span>Rohan's Shifts:</span>
-                        <span id="totalHours">0</span>
+                        <span>Total Entries Found:</span>
+                        <span id="totalEntries">0</span>
                     </div>
                 </div>
 
@@ -408,17 +404,14 @@
     </div>
 
     <script>
-        // PDF.js setup
         pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
 
         let extractedData = [];
         let currentTimesheetId = null;
         let savedTimesheets = {};
 
-        // Load saved timesheets from localStorage on page load
         document.addEventListener('DOMContentLoaded', loadSavedTimesheets);
 
-        // File input handling
         const fileInput = document.getElementById('fileInput');
         const uploadArea = document.querySelector('.upload-area');
         const progress = document.querySelector('.progress');
@@ -427,12 +420,9 @@
         const error = document.getElementById('error');
 
         fileInput.addEventListener('change', handleFileSelect);
-
-        // Timesheet selector handling
         document.getElementById('timesheetSelect').addEventListener('change', handleTimesheetSelect);
         document.getElementById('notesInput').addEventListener('input', updateCurrentTimesheetNotes);
 
-        // Drag and drop
         uploadArea.addEventListener('dragover', (e) => {
             e.preventDefault();
             uploadArea.classList.add('dragover');
@@ -478,7 +468,6 @@
             
             if (count > 0) {
                 timesheetSelectorDiv.style.display = 'block';
-                
                 Object.entries(savedTimesheets).forEach(([id, timesheet]) => {
                     const option = document.createElement('option');
                     option.value = id;
@@ -497,12 +486,9 @@
             if (selectedId && savedTimesheets[selectedId]) {
                 currentTimesheetId = selectedId;
                 const timesheet = savedTimesheets[selectedId];
-                
                 extractedData = timesheet.data;
                 displayResults(timesheet.fileName, extractedData);
-                
                 document.getElementById('notesInput').value = timesheet.notes || '';
-                
                 deleteBtn.style.display = 'inline-block';
             } else {
                 currentTimesheetId = null;
@@ -533,19 +519,16 @@
                 const arrayBuffer = await file.arrayBuffer();
                 const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
                 
-                let allText = '';
-                const totalPages = pdf.numPages;
-
-                for (let i = 1; i <= totalPages; i++) {
-                    updateProgress((i / totalPages) * 50);
+                let allItems = [];
+                for (let i = 1; i <= pdf.numPages; i++) {
+                    updateProgress((i / pdf.numPages) * 50);
                     const page = await pdf.getPage(i);
                     const textContent = await page.getTextContent();
-                    const pageText = textContent.items.map(item => item.str).join(' ');
-                    allText += pageText + ' ';
+                    allItems.push(...textContent.items);
                 }
 
                 updateProgress(75);
-                extractedData = parseTimesheetData(allText);
+                extractedData = parseTimesheetData(allItems);
                 updateProgress(100);
 
                 displayResults(file.name, extractedData);
@@ -566,83 +549,106 @@
         // =================================================================
         // ===== START OF CORRECTED FUNCTION ===============================
         // =================================================================
-        function parseTimesheetData(text) {
+        function parseTimesheetData(items) {
             const rohanEntries = [];
-            // Regex to find time formats like 9:30-18:00 or 7:00-13:00
             const timePattern = /(\d{1,2}:\d{2})-\d{1,2}:\d{2}/;
-            // Keywords to identify sections
-            const sectionKeywords = ['Dispatch', 'Batching', 'Processing', 'Packer/CP'];
-            
-            // The KEY CHANGE is here: Split by one or more spaces instead of newlines
-            const words = text.split(/\s+/);
-            
-            let currentSection = 'Unknown';
-            let entryCounter = 1;
 
-            // Iterate through each "word" in the document
-            for (let i = 0; i < words.length; i++) {
-                const word = words[i];
-
-                // Update the current section when a keyword is found
-                if (sectionKeywords.some(sec => word.includes(sec))) {
-                    currentSection = word;
-                }
-
-                // Find an instance of "Rohan"
-                if (word.toLowerCase().startsWith('rohan')) {
-                    let startTime = null;
-                    let foundTime = false;
-                    
-                    // Search BACKWARDS from Rohan's name to find the closest preceding time
-                    // We search up to 5 words back, which should be sufficient for this table structure
-                    for (let j = i - 1; j >= Math.max(0, i - 5); j--) {
-                        const prevWord = words[j];
-                        const timeMatch = prevWord.match(timePattern);
-                        
-                        if (timeMatch) {
-                            startTime = timeMatch[1]; // Capture the start time (e.g., "9:30")
-                            foundTime = true;
-                            break; // Stop searching once the closest time is found
-                        }
-                    }
-                    
-                    if (foundTime) {
-                        // Determine a more specific location if possible
-                        let location = currentSection;
-                        if (currentSection.toLowerCase().includes('processing') && text.toLowerCase().includes('atm/ processing office')) {
-                            location = 'ATM/ Processing office';
-                        }
-                        
-                        // Extract notes from the same "word" (e.g., "Rohan(ATM)")
-                        const notes = word.toLowerCase().includes('atm') ? 'ATM duties' : 'Regular duties';
-                        
-                        rohanEntries.push({
-                            entry: entryCounter++,
-                            startTime: startTime,
-                            location: location,
-                            notes: notes
-                        });
-                    }
+            const dayHeaders = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
+            const dayColumns = [];
+            for (const day of dayHeaders) {
+                const headerItem = items.find(item => item.str.trim() === day);
+                if (headerItem) {
+                    dayColumns.push({
+                        day: day,
+                        x_start: headerItem.transform[4],
+                        width: headerItem.width
+                    });
                 }
             }
-            
+            dayColumns.sort((a, b) => a.x_start - b.x_start);
+            for (let i = 0; i < dayColumns.length; i++) {
+                dayColumns[i].x_end = (i + 1 < dayColumns.length) ? dayColumns[i + 1].x_start - 1 : Infinity;
+            }
+
+            const sectionKeywords = ['ATM/ Processing office', 'Packer/CP', 'Batching', 'ATM/Processing', 'Dispatch'];
+            const sectionRows = [];
+            for (const keyword of sectionKeywords) {
+                const rowItem = items.find(item => item.str.trim().startsWith(keyword));
+                if (rowItem) {
+                    sectionRows.push({
+                        name: keyword.replace('ATM/Processing', 'ATM/Processing'),
+                        y: rowItem.transform[5]
+                    });
+                }
+            }
+            sectionRows.sort((a, b) => b.y - a.y); // Sort from page bottom to top
+
+            const rohanInstances = items.filter(item => item.str.toLowerCase().startsWith('rohan'));
+
+            for (const rohanItem of rohanInstances) {
+                const rohanX = rohanItem.transform[4];
+                const rohanY = rohanItem.transform[5];
+
+                const dayColumn = dayColumns.find(col => rohanX >= col.x_start && rohanX < col.x_end);
+                if (!dayColumn) continue;
+
+                const sectionRow = sectionRows.find(row => rohanY <= row.y);
+                const section = sectionRow ? sectionRow.name : 'Unknown';
+
+                let startTime = null;
+                let bestTimeCandidate = null;
+                let minTimeDistance = Infinity;
+
+                items.forEach(item => {
+                    const timeMatch = item.str.match(timePattern);
+                    if (timeMatch) {
+                        const timeX = item.transform[4];
+                        const timeY = item.transform[5];
+                        if (timeX >= dayColumn.x_start && timeX < dayColumn.x_end) {
+                            const yDistance = Math.abs(rohanY - timeY);
+                            if (yDistance < minTimeDistance) {
+                                minTimeDistance = yDistance;
+                                bestTimeCandidate = timeMatch[1];
+                            }
+                        }
+                    }
+                });
+                startTime = bestTimeCandidate;
+
+                if (dayColumn && startTime) {
+                    const notes = rohanItem.str.toLowerCase().includes('(atm)') ? 'ATM duties' : 'Regular duties';
+                    let location = section;
+                    if (section === 'ATM/ Processing office') location = 'ATM/ Processing office';
+                    if (section === 'Dispatch' && rohanItem.transform[5] > 250 && rohanItem.transform[5] < 350) location = "Dispatch";
+                    rohanEntries.push({
+                        day: dayColumn.day,
+                        startTime: startTime,
+                        location: location,
+                        notes: notes
+                    });
+                }
+            }
+
             if (rohanEntries.length === 0) {
-                showError("Could not find any start times associated with 'Rohan' in this timesheet.");
+                showError("Could not find any start times for 'Rohan' using coordinate parsing.");
+                return [];
             }
 
-            // A simple deduplication step to handle cases where OCR might create duplicates
             const uniqueEntries = [];
             const seen = new Set();
             for (const entry of rohanEntries) {
-                const key = `${entry.startTime}-${entry.location}`;
+                const key = `${entry.day}-${entry.startTime}`;
                 if (!seen.has(key)) {
                     uniqueEntries.push(entry);
                     seen.add(key);
                 }
             }
+            
+            // Sort entries chronologically by day
+            const dayOrder = { 'Monday': 1, 'Tuesday': 2, 'Wednesday': 3, 'Thursday': 4, 'Friday': 5 };
+            uniqueEntries.sort((a, b) => dayOrder[a.day] - dayOrder[b.day]);
 
-            // Renumber entries after deduplication
-            return uniqueEntries.map((entry, index) => ({ ...entry, entry: index + 1 }));
+            return uniqueEntries;
         }
         // =================================================================
         // ===== END OF CORRECTED FUNCTION =================================
@@ -656,34 +662,30 @@
             if (data.length === 0) {
                 const row = tableBody.insertRow();
                 row.innerHTML = `<td colspan="4" style="text-align: center; color: #666; font-style: italic;">No start times found for Rohan in this roster</td>`;
-                results.style.display = 'block';
-                return;
+            } else {
+                data.forEach(entry => {
+                    const row = tableBody.insertRow();
+                    row.innerHTML = `
+                        <td><strong>${entry.day}</strong></td>
+                        <td><strong>${entry.startTime}</strong></td>
+                        <td>${entry.location}</td>
+                        <td>${entry.notes}</td>
+                    `;
+                });
             }
-            
-            data.forEach(entry => {
-                const row = tableBody.insertRow();
-                row.innerHTML = `
-                    <td><strong>#${entry.entry}</strong></td>
-                    <td><strong>${entry.startTime}</strong></td>
-                    <td>${entry.location}</td>
-                    <td>${entry.notes}</td>
-                `;
-            });
 
-            document.getElementById('totalDays').textContent = data.length;
-            document.getElementById('regularHours').textContent = `${data.length} shifts`;
-            document.getElementById('totalHours').textContent = `${data.length} total entries`;
-
+            document.getElementById('totalShifts').textContent = data.length;
+            document.getElementById('totalEntries').textContent = data.length;
             results.style.display = 'block';
         }
 
         function exportToCSV() {
             if (!extractedData || extractedData.length === 0) return;
-            const headers = ['Entry', 'Start Time', 'Area/Location', 'Notes'];
+            const headers = ['Day', 'Start Time', 'Area/Location', 'Notes'];
             const csv = [
                 headers.join(','),
                 ...extractedData.map(row => [
-                    row.entry,
+                    row.day,
                     row.startTime,
                     `"${row.location}"`,
                     `"${row.notes}"`
