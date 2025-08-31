@@ -15,6 +15,8 @@ class TimesheetParser {
         this.refreshBtn = document.getElementById('refreshBtn');
         this.resultsSection = document.getElementById('resultsSection');
         this.scheduleBody = document.getElementById('scheduleBody');
+        // Get the summary element
+        this.weekSummary = document.getElementById('weekSummary');
         this.setupEventListeners();
     }
 
@@ -108,6 +110,12 @@ class TimesheetParser {
         this.displaySelectedWeek();
     }
 
+    // Helper function to calculate hours from a time string like "9:30"
+    _timeToHours(timeStr) {
+        const [hours, minutes] = timeStr.split(':').map(Number);
+        return hours + minutes / 60;
+    }
+
     displaySelectedWeek() {
         const selectedKey = this.weekSelect.value;
         if (!selectedKey) { this.resultsSection.style.display = 'none'; return; }
@@ -118,17 +126,22 @@ class TimesheetParser {
         this.resultsSection.style.display = 'block';
         this.scheduleBody.innerHTML = '';
         
+        let totalHours = 0; // Initialize total hours
         const daysOrder = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"];
+
         daysOrder.forEach(dayName => {
             const day = weekData.days[dayName];
             const row = document.createElement('tr');
             
-            // CHANGED: Format the full time range
             let timeText = 'Off';
             if (day.start && day.end) {
                 timeText = `${day.start} - ${day.end}`;
+                // Calculate and add to total hours
+                const startHours = this._timeToHours(day.start);
+                const endHours = this._timeToHours(day.end);
+                totalHours += (endHours - startHours);
             } else if (day.start) {
-                timeText = day.start; // Fallback
+                timeText = day.start;
             }
 
             const notes = [];
@@ -144,6 +157,9 @@ class TimesheetParser {
             `;
             this.scheduleBody.appendChild(row);
         });
+
+        // Update the summary text
+        this.weekSummary.textContent = `Total hours for the week: ${totalHours.toFixed(2)}`;
     }
 
     showStatus(message, type) {
