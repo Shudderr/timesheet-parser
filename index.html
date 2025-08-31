@@ -1,0 +1,803 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Timesheet PDF Parser</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+            overflow: hidden;
+        }
+
+        .header {
+            background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+            color: white;
+            padding: 30px;
+            text-align: center;
+        }
+
+        .header h1 {
+            font-size: 2.5rem;
+            margin-bottom: 10px;
+            font-weight: 700;
+        }
+
+        .header p {
+            opacity: 0.9;
+            font-size: 1.1rem;
+        }
+
+        .content {
+            padding: 40px;
+        }
+
+        .upload-area {
+            border: 3px dashed #ddd;
+            border-radius: 15px;
+            padding: 60px 20px;
+            text-align: center;
+            transition: all 0.3s ease;
+            cursor: pointer;
+            margin-bottom: 30px;
+            background: linear-gradient(145deg, #f8f9fa, #e9ecef);
+        }
+
+        .upload-area:hover {
+            border-color: #4facfe;
+            background: linear-gradient(145deg, #e3f2fd, #bbdefb);
+            transform: translateY(-2px);
+        }
+
+        .upload-area.dragover {
+            border-color: #00f2fe;
+            background: linear-gradient(145deg, #e0f2f1, #b2dfdb);
+            transform: scale(1.02);
+        }
+
+        .upload-icon {
+            font-size: 4rem;
+            margin-bottom: 20px;
+            color: #4facfe;
+        }
+
+        .upload-text {
+            font-size: 1.2rem;
+            color: #666;
+            margin-bottom: 15px;
+        }
+
+        .file-input {
+            display: none;
+        }
+
+        .btn {
+            background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+            color: white;
+            border: none;
+            padding: 15px 30px;
+            border-radius: 50px;
+            font-size: 1rem;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            box-shadow: 0 4px 15px rgba(79, 172, 254, 0.4);
+        }
+
+        .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(79, 172, 254, 0.6);
+        }
+
+        .progress {
+            width: 100%;
+            height: 8px;
+            background: #f0f0f0;
+            border-radius: 4px;
+            overflow: hidden;
+            margin: 20px 0;
+            display: none;
+        }
+
+        .progress-bar {
+            height: 100%;
+            background: linear-gradient(90deg, #4facfe, #00f2fe);
+            transition: width 0.3s ease;
+            width: 0%;
+        }
+
+        .results {
+            display: none;
+            margin-top: 30px;
+        }
+
+        .results-header {
+            background: linear-gradient(135deg, #11998e, #38ef7d);
+            color: white;
+            padding: 20px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+        }
+
+        .data-table {
+            width: 100%;
+            border-collapse: collapse;
+            border-radius: 10px;
+            overflow: hidden;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.1);
+        }
+
+        .data-table th {
+            background: linear-gradient(135deg, #667eea, #764ba2);
+            color: white;
+            padding: 15px;
+            text-align: left;
+            font-weight: 600;
+        }
+
+        .data-table td {
+            padding: 12px 15px;
+            border-bottom: 1px solid #f0f0f0;
+        }
+
+        .data-table tr:nth-child(even) {
+            background: #f8f9fa;
+        }
+
+        .data-table tr:hover {
+            background: #e3f2fd;
+        }
+
+        .summary {
+            background: linear-gradient(135deg, #ffecd2, #fcb69f);
+            padding: 20px;
+            border-radius: 10px;
+            margin-top: 20px;
+        }
+
+        .summary h3 {
+            color: #333;
+            margin-bottom: 15px;
+        }
+
+        .summary-item {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 10px;
+            padding: 8px 0;
+            border-bottom: 1px solid rgba(0,0,0,0.1);
+        }
+
+        .summary-item:last-child {
+            border-bottom: none;
+            font-weight: 600;
+            font-size: 1.1rem;
+        }
+
+        .export-buttons {
+            margin-top: 20px;
+            text-align: center;
+        }
+
+        .export-buttons button {
+            margin: 0 10px;
+            background: linear-gradient(135deg, #a8edea, #fed6e3);
+            color: #333;
+        }
+
+        .timesheet-selector {
+            background: linear-gradient(135deg, #ffecd2, #fcb69f);
+            padding: 20px;
+            border-radius: 10px;
+            margin-bottom: 30px;
+            display: none;
+        }
+
+        .timesheet-selector h3 {
+            color: #333;
+            margin-bottom: 15px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .selector-controls {
+            display: flex;
+            gap: 15px;
+            align-items: center;
+            flex-wrap: wrap;
+            margin-bottom: 15px;
+        }
+
+        .selector-controls select {
+            flex: 1;
+            min-width: 200px;
+            padding: 12px 15px;
+            border: 2px solid #ddd;
+            border-radius: 8px;
+            font-size: 1rem;
+            background: white;
+            transition: border-color 0.3s ease;
+        }
+
+        .selector-controls select:focus {
+            outline: none;
+            border-color: #4facfe;
+        }
+
+        .notes-section {
+            margin-top: 15px;
+        }
+
+        .notes-input {
+            width: 100%;
+            padding: 12px 15px;
+            border: 2px solid #ddd;
+            border-radius: 8px;
+            font-size: 1rem;
+            resize: vertical;
+            min-height: 60px;
+            transition: border-color 0.3s ease;
+        }
+
+        .notes-input:focus {
+            outline: none;
+            border-color: #4facfe;
+        }
+
+        .notes-label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 600;
+            color: #333;
+        }
+
+        .delete-btn {
+            background: linear-gradient(135deg, #ff9a9e, #fecfef);
+            color: #721c24;
+            border: none;
+            padding: 8px 15px;
+            border-radius: 20px;
+            font-size: 0.9rem;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .delete-btn:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 4px 15px rgba(255, 154, 158, 0.4);
+        }
+
+        .saved-count {
+            background: rgba(255, 255, 255, 0.2);
+            padding: 5px 12px;
+            border-radius: 15px;
+            font-size: 0.9rem;
+            margin-left: 10px;
+        }
+
+        .error {
+            background: linear-gradient(135deg, #ff9a9e, #fecfef);
+            color: #721c24;
+            padding: 15px;
+            border-radius: 10px;
+            margin: 20px 0;
+            display: none;
+        }
+
+        @media (max-width: 600px) {
+            .content {
+                padding: 20px;
+            }
+            
+            .header h1 {
+                font-size: 2rem;
+            }
+            
+            .upload-area {
+                padding: 40px 15px;
+            }
+            
+            .data-table {
+                font-size: 0.9rem;
+            }
+            
+            .data-table th,
+            .data-table td {
+                padding: 8px 10px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>📊 Timesheet Parser</h1>
+            <p>Extract and analyze timesheet data from PDF files</p>
+        </div>
+
+        <div class="content">
+            <div class="upload-area" onclick="document.getElementById('fileInput').click()">
+                <div class="upload-icon">📄</div>
+                <div class="upload-text">Click to select PDF file or drag and drop</div>
+                <button class="btn">Choose File</button>
+                <input type="file" id="fileInput" class="file-input" accept=".pdf" />
+            </div>
+
+            <div class="progress">
+                <div class="progress-bar"></div>
+            </div>
+
+            <div class="error" id="error"></div>
+
+            <div class="timesheet-selector" id="timesheetSelector">
+                <h3>📂 Saved Timesheets <span class="saved-count" id="savedCount">0 saved</span></h3>
+                <div class="selector-controls">
+                    <select id="timesheetSelect">
+                        <option value="">Select a timesheet...</option>
+                    </select>
+                    <button class="delete-btn" onclick="deleteSelectedTimesheet()" id="deleteBtn" style="display: none;">🗑️ Delete</button>
+                </div>
+                <div class="notes-section">
+                    <label class="notes-label" for="notesInput">📝 Area/Location Notes:</label>
+                    <textarea id="notesInput" class="notes-input" placeholder="e.g., ATM maintenance, Office work, Field service..."></textarea>
+                </div>
+            </div>
+
+            <div class="results" id="results">
+                <div class="results-header">
+                    <h2>📋 Extracted Data</h2>
+                    <p id="fileName"></p>
+                </div>
+
+                <table class="data-table" id="dataTable">
+                    <thead>
+                        <tr>
+                            <th>Date</th>
+                            <th>Start Time</th>
+                            <th>End Time</th>
+                            <th>Hours</th>
+                            <th>Location</th>
+                        </tr>
+                    </thead>
+                    <tbody id="tableBody">
+                    </tbody>
+                </table>
+
+                <div class="summary">
+                    <h3>📈 Summary</h3>
+                    <div class="summary-item">
+                        <span>Total Days:</span>
+                        <span id="totalDays">0</span>
+                    </div>
+                    <div class="summary-item">
+                        <span>Regular Hours:</span>
+                        <span id="regularHours">0</span>
+                    </div>
+                    <div class="summary-item">
+                        <span>Total Hours:</span>
+                        <span id="totalHours">0</span>
+                    </div>
+                </div>
+
+                <div class="export-buttons">
+                    <button class="btn" onclick="exportToCSV()">💾 Export CSV</button>
+                    <button class="btn" onclick="exportToJSON()">📄 Export JSON</button>
+                    <button class="btn" onclick="saveTimesheet()">💾 Save Timesheet</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // PDF.js setup
+        pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+
+        let extractedData = [];
+        let currentTimesheetId = null;
+        let savedTimesheets = {};
+
+        // Load saved timesheets from localStorage on page load
+        document.addEventListener('DOMContentLoaded', loadSavedTimesheets);
+
+        // File input handling
+        const fileInput = document.getElementById('fileInput');
+        const uploadArea = document.querySelector('.upload-area');
+        const progress = document.querySelector('.progress');
+        const progressBar = document.querySelector('.progress-bar');
+        const results = document.getElementById('results');
+        const error = document.getElementById('error');
+
+        fileInput.addEventListener('change', handleFileSelect);
+
+        // Timesheet selector handling
+        document.getElementById('timesheetSelect').addEventListener('change', handleTimesheetSelect);
+        document.getElementById('notesInput').addEventListener('input', updateCurrentTimesheetNotes);
+
+        // Drag and drop
+        uploadArea.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            uploadArea.classList.add('dragover');
+        });
+
+        uploadArea.addEventListener('dragleave', () => {
+            uploadArea.classList.remove('dragover');
+        });
+
+        uploadArea.addEventListener('drop', (e) => {
+            e.preventDefault();
+            uploadArea.classList.remove('dragover');
+            const files = e.dataTransfer.files;
+            if (files.length > 0) {
+                processPDF(files[0]);
+            }
+        });
+
+        function handleFileSelect(e) {
+            const file = e.target.files[0];
+            if (file) {
+                processPDF(file);
+            }
+        }
+
+        function loadSavedTimesheets() {
+            const saved = localStorage.getItem('savedTimesheets');
+            if (saved) {
+                savedTimesheets = JSON.parse(saved);
+                updateTimesheetSelector();
+            }
+        }
+
+        function updateTimesheetSelector() {
+            const selector = document.getElementById('timesheetSelect');
+            const savedCount = document.getElementById('savedCount');
+            const timesheetSelectorDiv = document.getElementById('timesheetSelector');
+            
+            // Clear existing options
+            selector.innerHTML = '<option value="">Select a timesheet...</option>';
+            
+            const count = Object.keys(savedTimesheets).length;
+            savedCount.textContent = `${count} saved`;
+            
+            if (count > 0) {
+                timesheetSelectorDiv.style.display = 'block';
+                
+                // Add options for each saved timesheet
+                Object.entries(savedTimesheets).forEach(([id, timesheet]) => {
+                    const option = document.createElement('option');
+                    option.value = id;
+                    option.textContent = `${timesheet.fileName} - ${timesheet.uploadDate}`;
+                    selector.appendChild(option);
+                });
+            } else {
+                timesheetSelectorDiv.style.display = 'none';
+            }
+        }
+
+        function handleTimesheetSelect(e) {
+            const selectedId = e.target.value;
+            const deleteBtn = document.getElementById('deleteBtn');
+            
+            if (selectedId && savedTimesheets[selectedId]) {
+                currentTimesheetId = selectedId;
+                const timesheet = savedTimesheets[selectedId];
+                
+                // Load the timesheet data
+                extractedData = timesheet.data;
+                displayResults(timesheet.fileName, extractedData);
+                
+                // Load notes
+                document.getElementById('notesInput').value = timesheet.notes || '';
+                
+                deleteBtn.style.display = 'inline-block';
+            } else {
+                currentTimesheetId = null;
+                results.style.display = 'none';
+                document.getElementById('notesInput').value = '';
+                deleteBtn.style.display = 'none';
+            }
+        }
+
+        function updateCurrentTimesheetNotes() {
+            if (currentTimesheetId && savedTimesheets[currentTimesheetId]) {
+                savedTimesheets[currentTimesheetId].notes = document.getElementById('notesInput').value;
+                localStorage.setItem('savedTimesheets', JSON.stringify(savedTimesheets));
+            }
+        }
+
+        async function processPDF(file) {
+            if (file.type !== 'application/pdf') {
+                showError('Please select a PDF file.');
+                return;
+            }
+
+            hideError();
+            showProgress();
+            results.style.display = 'none';
+
+            try {
+                const arrayBuffer = await file.arrayBuffer();
+                const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+                
+                let allText = '';
+                const totalPages = pdf.numPages;
+
+                for (let i = 1; i <= totalPages; i++) {
+                    updateProgress((i / totalPages) * 50);
+                    const page = await pdf.getPage(i);
+                    const textContent = await page.getTextContent();
+                    const pageText = textContent.items.map(item => item.str).join(' ');
+                    allText += pageText + ' ';
+                }
+
+                updateProgress(75);
+                extractedData = parseTimesheetData(allText);
+                updateProgress(100);
+
+                displayResults(file.name, extractedData);
+                hideProgress();
+
+                // Clear current selection and notes for new upload
+                currentTimesheetId = null;
+                document.getElementById('timesheetSelect').value = '';
+                document.getElementById('notesInput').value = '';
+                document.getElementById('deleteBtn').style.display = 'none';
+
+            } catch (err) {
+                console.error('Error processing PDF:', err);
+                showError('Error processing PDF file. Please try again.');
+                hideProgress();
+            }
+        }
+
+        function parseTimesheetData(text) {
+            const data = [];
+            
+            // Common timesheet patterns
+            const patterns = [
+                // Date, time patterns
+                /(\d{1,2}\/\d{1,2}\/\d{4})\s+(\d{1,2}:\d{2})\s*-?\s*(\d{1,2}:\d{2})\s*(\d+\.?\d*)?/g,
+                /(\d{1,2}-\d{1,2}-\d{4})\s+(\d{1,2}:\d{2})\s*-?\s*(\d{1,2}:\d{2})\s*(\d+\.?\d*)?/g,
+                /(\w+\s+\d{1,2},?\s+\d{4})\s+(\d{1,2}:\d{2})\s*-?\s*(\d{1,2}:\d{2})\s*(\d+\.?\d*)?/g
+            ];
+
+            // Try each pattern
+            for (const pattern of patterns) {
+                let match;
+                while ((match = pattern.exec(text)) !== null) {
+                    const [, date, startTime, endTime, hours] = match;
+                    
+                    // Calculate hours if not provided
+                    let calculatedHours = hours || calculateHours(startTime, endTime);
+                    
+                    data.push({
+                        date: formatDate(date),
+                        startTime: startTime,
+                        endTime: endTime,
+                        hours: parseFloat(calculatedHours) || 0,
+                        location: extractLocation(text, match.index) || 'Not specified'
+                    });
+                }
+                
+                if (data.length > 0) break; // If we found data, use this pattern
+            }
+
+            // If no structured data found, try to extract key information
+            if (data.length === 0) {
+                const fallbackData = extractFallbackData(text);
+                return fallbackData;
+            }
+
+            return data.sort((a, b) => new Date(a.date) - new Date(b.date));
+        }
+
+        function extractFallbackData(text) {
+            const data = [];
+            
+            // Look for any time patterns
+            const timePattern = /(\d{1,2}:\d{2})/g;
+            const datePattern = /(\d{1,2}\/\d{1,2}\/\d{4}|\d{1,2}-\d{1,2}-\d{4})/g;
+            
+            const times = [...text.matchAll(timePattern)].map(m => m[1]);
+            const dates = [...text.matchAll(datePattern)].map(m => m[1]);
+            
+            // Create sample entries if we found some patterns
+            for (let i = 0; i < Math.min(dates.length, Math.floor(times.length / 2)); i++) {
+                data.push({
+                    date: formatDate(dates[i]),
+                    startTime: times[i * 2] || '09:00',
+                    endTime: times[i * 2 + 1] || '17:00',
+                    hours: 8,
+                    location: 'Extracted from PDF'
+                });
+            }
+            
+            return data;
+        }
+
+        function calculateHours(startTime, endTime) {
+            const start = new Date(`2000-01-01 ${startTime}`);
+            const end = new Date(`2000-01-01 ${endTime}`);
+            const diff = (end - start) / (1000 * 60 * 60);
+            return Math.max(0, diff).toFixed(2);
+        }
+
+        function formatDate(dateStr) {
+            try {
+                const date = new Date(dateStr);
+                return date.toLocaleDateString();
+            } catch {
+                return dateStr;
+            }
+        }
+
+        function extractLocation(text, index) {
+            // Look for location indicators around the match
+            const snippet = text.slice(Math.max(0, index - 100), index + 100);
+            const locationPattern = /(office|site|location|address|building|floor)\s*:?\s*([^,\n.]+)/i;
+            const match = snippet.match(locationPattern);
+            return match ? match[2].trim() : null;
+        }
+
+        function displayResults(fileName, data) {
+            document.getElementById('fileName').textContent = `File: ${fileName}`;
+            const tableBody = document.getElementById('tableBody');
+            tableBody.innerHTML = '';
+
+            let totalHours = 0;
+            
+            data.forEach(entry => {
+                const row = tableBody.insertRow();
+                row.innerHTML = `
+                    <td>${entry.date}</td>
+                    <td>${entry.startTime}</td>
+                    <td>${entry.endTime}</td>
+                    <td>${entry.hours}</td>
+                    <td>${entry.location}</td>
+                `;
+                totalHours += entry.hours;
+            });
+
+            // Update summary
+            document.getElementById('totalDays').textContent = data.length;
+            document.getElementById('regularHours').textContent = totalHours.toFixed(2);
+            document.getElementById('totalHours').textContent = totalHours.toFixed(2);
+
+            results.style.display = 'block';
+        }
+
+        function exportToCSV() {
+            const headers = ['Date', 'Start Time', 'End Time', 'Hours', 'Location'];
+            const csv = [
+                headers.join(','),
+                ...extractedData.map(row => [
+                    row.date,
+                    row.startTime,
+                    row.endTime,
+                    row.hours,
+                    `"${row.location}"`
+                ].join(','))
+            ].join('\n');
+
+            downloadFile(csv, 'timesheet_data.csv', 'text/csv');
+        }
+
+        function exportToJSON() {
+            const json = JSON.stringify(extractedData, null, 2);
+            downloadFile(json, 'timesheet_data.json', 'application/json');
+        }
+
+        function downloadFile(content, filename, mimeType) {
+            const blob = new Blob([content], { type: mimeType });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = filename;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        }
+
+        function saveTimesheet() {
+            if (!extractedData || extractedData.length === 0) {
+                showError('No timesheet data to save. Please upload and process a PDF first.');
+                return;
+            }
+
+            const fileName = document.getElementById('fileName').textContent.replace('File: ', '') || 'timesheet.pdf';
+            const notes = document.getElementById('notesInput').value;
+            const uploadDate = new Date().toLocaleDateString();
+            
+            // Generate unique ID
+            const id = Date.now().toString();
+            
+            // Create timesheet object
+            const timesheet = {
+                id,
+                fileName,
+                uploadDate,
+                data: [...extractedData],
+                notes
+            };
+            
+            // Save to localStorage
+            savedTimesheets[id] = timesheet;
+            localStorage.setItem('savedTimesheets', JSON.stringify(savedTimesheets));
+            
+            // Update UI
+            currentTimesheetId = id;
+            updateTimesheetSelector();
+            document.getElementById('timesheetSelect').value = id;
+            document.getElementById('deleteBtn').style.display = 'inline-block';
+            
+            // Show success message
+            const originalText = document.querySelector('.results-header h2').textContent;
+            document.querySelector('.results-header h2').textContent = '✅ Timesheet Saved Successfully!';
+            setTimeout(() => {
+                document.querySelector('.results-header h2').textContent = originalText;
+            }, 2000);
+        }
+
+        function deleteSelectedTimesheet() {
+            if (!currentTimesheetId || !savedTimesheets[currentTimesheetId]) {
+                return;
+            }
+            
+            if (confirm('Are you sure you want to delete this timesheet?')) {
+                delete savedTimesheets[currentTimesheetId];
+                localStorage.setItem('savedTimesheets', JSON.stringify(savedTimesheets));
+                
+                // Reset UI
+                currentTimesheetId = null;
+                extractedData = [];
+                document.getElementById('timesheetSelect').value = '';
+                document.getElementById('notesInput').value = '';
+                document.getElementById('deleteBtn').style.display = 'none';
+                results.style.display = 'none';
+                
+                updateTimesheetSelector();
+            }
+        }
+
+        function showProgress() {
+            progress.style.display = 'block';
+        }
+
+        function hideProgress() {
+            progress.style.display = 'none';
+            progressBar.style.width = '0%';
+        }
+
+        function updateProgress(percent) {
+            progressBar.style.width = percent + '%';
+        }
+
+        function showError(message) {
+            error.textContent = message;
+            error.style.display = 'block';
+        }
+
+        function hideError() {
+            error.style.display = 'none';
+        }
+    </script>
+</body>
+</html>
