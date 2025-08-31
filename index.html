@@ -6,7 +6,6 @@
     <meta name="description" content="A simple web tool to parse timesheet PDFs for Rohan's schedule.">
     <meta name="author" content="Timesheet Parser">
     <title>Rohan's Timesheet Parser</title>
-    <!-- The PDF.js library is loaded from a trusted CDN -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
     <style>
         :root {
@@ -150,98 +149,118 @@
         const errorDiv = document.getElementById('error');
         const initializer = document.getElementById('initializer');
         
-        /**
-         * The core parsing function, translated from the successful Python logic.
-         * It reconstructs the PDF's grid structure to accurately find data.
-         * @param {Array} items - The array of text items from pdf.js.
-         * @returns {Object} An object containing the extracted entries.
-         */
+        // =================================================================
+        // ===== START OF FINAL, CORRECTED PARSING FUNCTION ================
+        // =================================================================
         function parseTimesheetData(items) {
             const timePattern = /(\d{1,2}:\d{2})-\d{1,2}:\d{2}/;
             const targetName = "rohan";
             const rohanEntries = [];
-
-            // 1. Reconstruct the grid from PDF text items
-            // Group items by their Y-coordinate to form rows, then X for columns
-            const yCoords = [...new Set(items.map(p => Math.round(p.transform[5])))].sort((a, b) => b - a);
-            const xCoords = [...new Set(items.map(p => Math.round(p.transform[4])))].sort((a, b) => a - b);
-            const grid = yCoords.map(() => Array(xCoords.length).fill(''));
-            items.forEach(item => {
-                const yIndex = yCoords.indexOf(Math.round(item.transform[5]));
-                const xIndex = xCoords.indexOf(Math.round(item.transform[4]));
-                if (yIndex !== -1 && xIndex !== -1) grid[yIndex][xIndex] = item.str;
-            });
-
-            // 2. Find the column index for each day of the week
             const dayHeaders = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
-            const dayColumnMap = {};
-            grid.forEach(row => {
-                row.forEach((cell, colIndex) => {
-                    if (dayHeaders.includes(cell.trim())) dayColumnMap[cell.trim()] = colIndex;
-                });
+            
+            // 1. Calculate column boundaries based on weekday headers
+            let colBounds = [];
+            const headers = {};
+            items.forEach(item => {
+                if (dayHeaders.includes(item.str)) headers[item.str] = (item.transform[4] + item.transform[4] + item.width) / 2;
             });
-
-            // 3. Find the column index that contains the section/area names
-            const sectionKeywords = ['ATM/ Processing office', 'Packer/CP', 'Batching', 'ATM/Processing', 'Dispatch'];
-            let sectionColIndex = -1;
-            for (let r = 0; r < grid.length; r++) {
-                for (let c = 0; c < grid[r].length; c++) {
-                    if (sectionKeywords.some(kw => grid[r][c].trim().startsWith(kw))) {
-                        sectionColIndex = c;
-                        break;
-                    }
-                }
-                if (sectionColIndex !== -1) break;
+            
+            if (Object.keys(headers).length < 5) {
+                console.error("Could not find all 5 weekday headers.");
+                return { entries: [] };
             }
 
-            // 4. Iterate through the grid to find Rohan's shifts
+            const sortedCenters = dayHeaders.map(day => headers[day]).sort((a, b) => a - b);
+            const boundaries = sortedCenters.slice(0, -1).map((center, i) => (center + sortedCenters[i+1]) / 2);
+            const firstBound = sortedCenters[0] - (boundaries[0] - sortedCenters[0]);
+            const lastBound = sortedCenters[sortedCenters.length-1] + (sortedCenters[sorted-1] - boundaries[boundaries.length-1]);
+            colBounds = [firstBound, ...boundaries, lastBound];
+
+            const getColIndex = (x) => {
+                for (let i = 0; i < dayHeaders.length; i++) {
+                    if (x >= colBounds[i] && x < colBounds[i+1]) return i;
+                }
+                return -1;
+            };
+
+            // 2. Group all text items into rows based on Y-coordinate
+            const rows = new Map();
+            items.forEach(item => {
+                const yKey = Math.round(item.transform[5]);
+                if (!rows.has(yKey)) rows.set(yKey, []);
+                rows.get(yKey).push(item);
+            });
+            
+            // 3. Build a dense, 5-column grid from the rows
+            const grid = [];
+            const sectionKeywords = ['ATM/ Processing office', 'Packer/CP', 'Batching', 'ATM/Processing', 'Dispatch'];
+            let sectionColIndex = -1;
+
+            const sortedY = [...rows.keys()].sort((a, b) => b - a);
+            sortedY.forEach(y => {
+                const rowItems = rows.get(y);
+                const gridRow = Array(dayHeaders.length + 1).fill(''); // +1 for a potential section column
+                let isSectionRow = false;
+
+                rowItems.forEach(item => {
+                    const text = item.str.trim();
+                    const xCenter = (item.transform[4] + item.transform[4] + item.width) / 2;
+                    const colIndex = getColIndex(xCenter);
+                    
+                    if (sectionKeywords.some(kw => text.startsWith(kw))) {
+                        isSectionRow = true;
+                        if(sectionColIndex === -1) sectionColIndex = 0; // Assume first column for sections
+                        gridRow[sectionColIndex] += (gridRow[sectionColIndex] ? ' ' : '') + text;
+                    } else if (colIndex !== -1) {
+                        gridRow[colIndex + 1] += (gridRow[colIndex + 1] ? ' ' : '') + text;
+                    }
+                });
+                grid.push(gridRow);
+            });
+            if (sectionColIndex === -1) sectionColIndex = 0; // Default if not found
+
+            // 4. Parse the clean grid
             grid.forEach((row, rowIndex) => {
                 row.forEach((cell, colIndex) => {
                     if (cell.toLowerCase().startsWith(targetName)) {
-                        const day = Object.keys(dayColumnMap).find(d => dayColumnMap[d] === colIndex);
-                        if (!day) return;
-
+                        const dayIndex = colIndex - 1;
+                        if (dayIndex < 0 || dayIndex >= dayHeaders.length) return;
+                        
                         let time = '';
                         let section = '';
-
-                        // Look UP in the SAME column for the time
+                        
+                        // Look UP in the same column for the time
                         for (let r = rowIndex; r >= 0; r--) {
-                            const potentialTimeCell = grid[r][colIndex];
-                            if (timePattern.test(potentialTimeCell)) {
-                                time = potentialTimeCell.match(timePattern)[1];
+                            if (timePattern.test(grid[r][colIndex])) {
+                                time = grid[r][colIndex].match(timePattern)[1];
                                 break;
                             }
                         }
 
-                        // Look UP in the SECTION column for the section/area
-                        if (sectionColIndex !== -1) {
-                            for (let r = rowIndex; r >= 0; r--) {
-                                const potentialSectionCell = grid[r][sectionColIndex];
-                                // A valid section name has some length and isn't just a number/time
-                                if (potentialSectionCell && potentialSectionCell.trim().length > 1 && isNaN(potentialSectionCell.charAt(0))) {
-                                    section = potentialSectionCell.trim();
-                                    break;
-                                }
+                        // Look UP in the section column for the section
+                        for (let r = rowIndex; r >= 0; r--) {
+                            if (grid[r][sectionColIndex].trim()) {
+                                section = grid[r][sectionColIndex].trim();
+                                break;
                             }
                         }
                         
-                        if (time) rohanEntries.push({ day, startTime: time, location: section });
+                        if (time) rohanEntries.push({ day: dayHeaders[dayIndex], startTime: time, location: section });
                     }
                 });
             });
 
-            // 5. Final processing: remove duplicates and sort by day
+            // 5. Final processing
             const uniqueEntries = Array.from(new Map(rohanEntries.map(entry => [entry.day, entry])).values());
             const dayOrder = { 'Monday': 1, 'Tuesday': 2, 'Wednesday': 3, 'Thursday': 4, 'Friday': 5 };
             uniqueEntries.sort((a, b) => dayOrder[a.day] - dayOrder[b.day]);
 
             return { entries: uniqueEntries };
         }
-
-        /**
-         * Processes the uploaded PDF file.
-         * @param {File} file - The PDF file from the input.
-         */
+        // =================================================================
+        // ===== END OF FINAL, CORRECTED PARSING FUNCTION ==================
+        // =================================================================
+        
         async function processPDF(file) {
             if (!file || file.type !== 'application/pdf') {
                 showError('Please select a valid PDF file.');
@@ -251,62 +270,43 @@
             resultsDiv.style.display = 'none';
             initializer.style.display = 'flex';
             initializer.textContent = 'Processing PDF...';
-            
             try {
                 const arrayBuffer = await file.arrayBuffer();
                 const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
                 const page = await pdf.getPage(1);
                 const textContent = await page.getTextContent();
-                
                 const { entries } = parseTimesheetData(textContent.items);
-                
                 displayResults(entries);
-
             } catch (err) {
                 console.error('Error processing PDF:', err);
                 showError('Could not process this PDF. It may be an image or corrupt.');
             } finally {
                 initializer.style.display = 'none';
-                fileInput.value = ''; // Reset input to allow re-uploading the same file
+                fileInput.value = '';
             }
         }
         
-        /**
-         * Renders the extracted data into the HTML table.
-         * @param {Array} entries - The array of parsed shift data.
-         */
         function displayResults(entries) {
-            tableBody.innerHTML = ''; // Clear previous results
+            tableBody.innerHTML = '';
             if (entries.length === 0) {
                 showError("No start times found for Rohan in this roster.");
                 return;
             }
-            
             entries.forEach(entry => {
                 const row = tableBody.insertRow();
-                row.innerHTML = `
-                    <td><strong>${entry.day}</strong></td>
-                    <td>${entry.startTime}</td>
-                    <td>${entry.location}</td>
-                `;
+                row.innerHTML = `<td><strong>${entry.day}</strong></td><td>${entry.startTime}</td><td>${entry.location}</td>`;
             });
             resultsDiv.style.display = 'block';
         }
 
-        // --- UI Helper Functions ---
         function showError(message) { errorDiv.textContent = message; errorDiv.style.display = 'block'; }
         function hideError() { errorDiv.style.display = 'none'; }
         function handleFileSelect(event) { const file = event.target.files[0]; processPDF(file); }
 
-        /**
-         * This function initializes the application after ensuring the PDF library is loaded.
-         */
         function initializeApp() {
-            // Attach all event listeners now that the page is ready
+            pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`;
             uploadArea.addEventListener('click', () => fileInput.click());
             fileInput.addEventListener('change', handleFileSelect);
-            
-            // Add drag and drop listeners
             uploadArea.addEventListener('dragover', (e) => { e.preventDefault(); e.stopPropagation(); uploadArea.style.borderColor = 'var(--primary-color)'; });
             uploadArea.addEventListener('dragleave', (e) => { e.preventDefault(); e.stopPropagation(); uploadArea.style.borderColor = '#ddd'; });
             uploadArea.addEventListener('drop', (e) => {
@@ -316,14 +316,9 @@
                 const file = e.dataTransfer.files[0];
                 processPDF(file);
             });
-            
-            // Hide the initializer overlay and show the main UI
             initializer.style.display = 'none';
         }
 
-        // --- Application Start ---
-        // We poll to check if the external pdf.js library is loaded before initializing the app.
-        // This is the most robust way to handle external script loading.
         const initCheckInterval = setInterval(() => {
             if (typeof pdfjsLib !== 'undefined' && pdfjsLib.getDocument) {
                 clearInterval(initCheckInterval);
@@ -331,14 +326,12 @@
             }
         }, 100);
 
-        // A fail-safe in case the library fails to load from the CDN
         setTimeout(() => {
             if (typeof pdfjsLib === 'undefined') {
                 clearInterval(initCheckInterval);
                 initializer.textContent = 'Error: Could not load PDF library. Please check your internet connection and refresh.';
             }
-        }, 10000); // 10-second timeout
-
+        }, 10000);
     </script>
 </body>
 </html>
